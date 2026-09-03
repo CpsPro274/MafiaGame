@@ -1,0 +1,239 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============================================================================
+// 1. AUTH & USER MANAGEMENT
+// ============================================================================
+
+model User {
+  id                  String         @id @default(uuid()) @db.Uuid
+  username            String         @unique @db.VarChar(50)
+  email               String?        @unique @db.VarChar(255)
+  passwordHash        String?        @map("password_hash") @db.VarChar(255)
+  avatarUrl           String?        @map("avatar_url") @db.VarChar(500)
+  isGuest             Boolean        @default(false) @map("is_guest")
+  isVerified          Boolean        @default(false) @map("is_verified")
+
+  // Game Stats & Rating
+  rating              Int            @default(1000)
+  gamesPlayed         Int            @default(0) @map("games_played")
+  devWins             Int            @default(0) @map("dev_wins")
+  mafiaWins           Int            @default(0) @map("mafia_wins")
+  bugsFixed           Int            @default(0) @map("bugs_fixed")
+  sabotagesSuccessful Int            @default(0) @map("sabotages_successful")
+
+  // Security
+  failedLoginAttempts Int            @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime?      @map("locked_until")
+  lastLoginAt         DateTime?      @map("last_login_at")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+
+  // Relations
+  oauthAccounts       OAuthAccount[]
+  sessions            UserSession[]
+  authTokens          AuthToken[]
+  hostedMatches       Match[]        @relation("HostedMatches")
+  matchParticipations MatchPlayer[]
+
+  @@map("users")
+}
+
+model OAuthAccount {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider       String   @db.VarChar(30) // 'github', 'google'
+  providerUserId String   @map("provider_user_id") @db.VarChar(255)
+  accessToken    String?  @map("access_token")
+  refreshToken   String?  @map("refresh_token")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([provider, providerUserId])
+  @@map("oauth_accounts")
+}
+
+model UserSession {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String   @unique @map("refresh_token_hash") @db.VarChar(255)
+  userAgent        String?  @map("user_agent") @db.VarChar(500)
+  ipAddress        String?  @map("ip_address") @db.VarChar(45)
+  isRevoked        Boolean  @default(false) @map("is_revoked")
+  expiresAt        DateTime @map("expires_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@map("user_sessions")
+}
+
+model AuthToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @map("token_hash") @db.VarChar(255)
+  tokenType String    @map("token_type") @db.VarChar(30) // 'PASSWORD_RESET', 'EMAIL_VERIFICATION'
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("auth_tokens")
+}
+
+// ============================================================================
+// 2. CHALLENGES & TEST CASES
+// ============================================================================
+
+model Challenge {
+  id                String     @id @default(uuid()) @db.Uuid
+  title             String     @db.VarChar(150)
+  description       String     @db.Text
+  language          String     @db.VarChar(30)
+  difficulty        String     @default("MEDIUM") @db.VarChar(20)
+  initialFlawedCode String     @map("initial_flawed_code") @db.Text
+  solutionCode      String?    @map("solution_code") @db.Text
+  bugManifesto      Json?      @map("bug_manifesto")
+  timeLimitSeconds  Int        @default(600) @map("time_limit_seconds")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+
+  testCases         TestCase[]
+  matches           Match[]
+
+  @@map("challenges")
+}
+
+model TestCase {
+  id             String    @id @default(uuid()) @db.Uuid
+  challengeId    String    @map("challenge_id") @db.Uuid
+  challenge      Challenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  input          String?   @db.Text
+  expectedOutput String    @map("expected_output") @db.Text
+  isHidden       Boolean   @default(false) @map("is_hidden")
+  description    String?   @db.VarChar(255)
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@map("test_cases")
+}
+
+// ============================================================================
+// 3. MATCHES & MULTIPLAYER PARTICIPATION
+// ============================================================================
+
+model Match {
+  id            String         @id @default(uuid()) @db.Uuid
+  roomCode      String         @unique @map("room_code") @db.VarChar(10)
+  hostId        String?        @map("host_id") @db.Uuid
+  host          User?          @relation("HostedMatches", fields: [hostId], references: [id], onDelete: SetNull)
+  challengeId   String         @map("challenge_id") @db.Uuid
+  challenge     Challenge      @relation(fields: [challengeId], references: [id])
+  status        String         @default("LOBBY") @db.VarChar(30) // LOBBY, IN_PROGRESS, VOTING, COMPLETED, ABORTED
+  winnerTeam    String?        @map("winner_team") @db.VarChar(20) // DEVELOPERS, MAFIA, DRAW
+  endReason     String?        @map("end_reason") @db.VarChar(50)
+  finalCode     String?        @map("final_code") @db.Text
+  startedAt     DateTime?      @map("started_at")
+  endedAt       DateTime?      @map("ended_at")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  players       MatchPlayer[]
+  votingRounds  VotingRound[]
+  auditLogs     AuditLog[]
+  codeSnapshots CodeSnapshot[]
+
+  @@map("matches")
+}
+
+model MatchPlayer {
+  id              String        @id @default(uuid()) @db.Uuid
+  matchId         String        @map("match_id") @db.Uuid
+  match           Match         @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  userId          String?       @map("user_id") @db.Uuid
+  user            User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  playerName      String        @map("player_name") @db.VarChar(50)
+  role            String        @db.VarChar(20) // DEVELOPER, MAFIA, OBSERVER
+  status          String        @default("ALIVE") @db.VarChar(20) // ALIVE, ELIMINATED, DISCONNECTED
+  linesAdded      Int           @default(0) @map("lines_added")
+  linesDeleted    Int           @default(0) @map("lines_deleted")
+  testsTriggered  Int           @default(0) @map("tests_triggered")
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  votesCast       Vote[]        @relation("VotesCast")
+  votesReceived   Vote[]        @relation("VotesReceived")
+  votingInitiated VotingRound[] @relation("Initiator")
+  eliminations    VotingRound[] @relation("Eliminated")
+  auditLogs       AuditLog[]
+
+  @@unique([matchId, userId])
+  @@map("match_players")
+}
+
+// ============================================================================
+// 4. VOTING & EMERGENCY MEETINGS
+// ============================================================================
+
+model VotingRound {
+  id                 String        @id @default(uuid()) @db.Uuid
+  matchId            String        @map("match_id") @db.Uuid
+  match              Match         @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  roundNumber        Int           @map("round_number")
+  initiatedById      String?       @map("initiated_by") @db.Uuid
+  initiatedBy        MatchPlayer?  @relation("Initiator", fields: [initiatedById], references: [id], onDelete: SetNull)
+  eliminatedPlayerId String?       @map("eliminated_player_id") @db.Uuid
+  eliminatedPlayer   MatchPlayer?  @relation("Eliminated", fields: [eliminatedPlayerId], references: [id], onDelete: SetNull)
+  createdAt          DateTime      @default(now()) @map("created_at")
+
+  votes              Vote[]
+
+  @@map("voting_rounds")
+}
+
+model Vote {
+  id            String      @id @default(uuid()) @db.Uuid
+  votingRoundId String      @map("voting_round_id") @db.Uuid
+  votingRound   VotingRound @relation(fields: [votingRoundId], references: [id], onDelete: Cascade)
+  voterId       String      @map("voter_id") @db.Uuid
+  voter         MatchPlayer @relation("VotesCast", fields: [voterId], references: [id], onDelete: Cascade)
+  targetId      String?     @map("target_id") @db.Uuid
+  target        MatchPlayer?@relation("VotesReceived", fields: [targetId], references: [id], onDelete: SetNull)
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  @@unique([votingRoundId, voterId])
+  @@map("votes")
+}
+
+// ============================================================================
+// 5. AUDIT LOGS & POST-GAME REPLAY SCRUBBER
+// ============================================================================
+
+model AuditLog {
+  id                String       @id @default(uuid()) @db.Uuid
+  matchId           String       @map("match_id") @db.Uuid
+  match             Match        @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  playerId          String?      @map("player_id") @db.Uuid
+  player            MatchPlayer? @relation(fields: [playerId], references: [id], onDelete: SetNull)
+  eventType         String       @map("event_type") @db.VarChar(50)
+  eventData         Json         @map("event_data")
+  matchTimeOffsetMs Int          @map("match_time_offset_ms")
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}
+
+model CodeSnapshot {
+  id                String   @id @default(uuid()) @db.Uuid
+  matchId           String   @map("match_id") @db.Uuid
+  match             Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  snapshotIndex     Int      @map("snapshot_index")
+  codeContent       String   @map("code_content") @db.Text
+  matchTimeOffsetMs Int      @map("match_time_offset_ms")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@map("code_snapshots")
+}
