@@ -1,4 +1,5 @@
 import express from "express";
+import authRouter from './routes/authRoutes.js';
 import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
@@ -8,7 +9,7 @@ import dotenv from "dotenv";
 dotenv.config();
 const {Pool} = pg;
 const app = express();
-
+  
 app.use(cors({
   origin:process.env.CLIENT_ORIGIN || 'http://localhost:5173',
   credentials:true
@@ -23,9 +24,17 @@ const io = new Server(httpServer, {
    }
 });
 
-const pool = new Pool({
-  connectionString:process.env.DATABASE_URL
-});
+const pool = new Pool(
+  process.env.DATABASE_URL
+    ? { connectionString: process.env.DATABASE_URL }
+    : {
+        user: process.env.DB_USER || "postgres",
+        host: process.env.DB_HOST || "localhost",
+        database: process.env.DB_NAME || "mafiagame",
+        password: process.env.DB_PASSWORD,
+        port: Number(process.env.DB_PORT) || 5432,
+      }
+);
 
 pool.connect()
   .then((client)=> {
@@ -208,14 +217,187 @@ app.get("/health", async (req, res) => {
   } 
 });
 
-"/api/rooms/:roomCode"
+// ==========================================
+// 1. GET /api/rooms/:roomCode
+// ==========================================
+app.get("/api/rooms/:roomCode", async (req, res) => {
+  try {
+    const { roomCode } = req.params;
+    const query = `
+      SELECT 
+        r.id,
+        r.room_code AS "roomCode",
+        r.status,
+        r.host_id AS "hostId",
+        r.winner_team AS "winnerTeam",
+        r.created_at AS "createdAt",
+        c.id AS "challengeId",
+        c.title AS "challengeTitle",
+        c.description AS "challengeDescription",
+        c.language AS "challengeLanguage",
+        (SELECT COUNT(*)::int FROM room_players rp WHERE rp.room_id = r.id) AS "playerCount"
+      FROM rooms r
+      LEFT JOIN challenges c ON r.challenge_id = c.id
+      WHERE r.room_code = $1;
+    `;
 
-"/api/rooms/:roomId/players"
+    const { rows } = await pool.query(query, [roomCode]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: `Room with code '${roomCode}' not found` });
+    }
 
-"/api/challenges"
+    const row = rows[0];
+    return res.json({
+      room: {
+        id: row.id,
+        roomCode: row.roomCode,
+        status: row.status,
+        hostId: row.hostId,
+        winnerTeam: row.winnerTeam,
+        createdAt: row.createdAt,
+        playerCount: row.playerCount,
+        challenge: row.challengeId ? {
+          id: row.challengeId,
+          title: row.challengeTitle,
+          description: row.challengeDescription,
+          language: row.challengeLanguage
+        } : null
+      }
+    });
+  } catch (err) {
+    console.error("Error fetching room by code:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
-"/api/challenges/:id"
+// ==========================================
+// 2. GET /api/rooms/:roomId/players
+// ==========================================
+app.get("/api/rooms/:roomId/players", async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const requestingUserId = req.query.userId ? Number(req.query.userId) : null;
 
+    const query = `
+      SELECT 
+        rp.user_id AS "userId",
+        u.username,
+        rp.is_alive AS "isAlive",
+        rp.role,
+        (r.host_id = rp.user_id) AS "isHost"
+      FROM room_players rp
+      JOIN users u ON rp.user_id = u.id
+      JOIN rooms r ON rp.room_id = r.id
+      WHERE rp.room_id = $1
+      ORDER BY rp.joined_at ASC;
+    `;
+
+    const { rows } = await pool.query(query, [roomId]);
+
+    // Security check: Mask the MAFIA role unless the caller is requesting their own profile[cite: 1, 2]
+    const players = rows.map((p) => {
+      const isSelf = requestingUserId && requestingUserId === p.userId;
+      return {
+        userId: p.userId,
+        username: p.username,
+        isAlive: p.isAlive,
+        isHost: p.isHost,
+        role: isSelf ? p.role : null
+      };
+    });
+
+    return res.json({ players });
+  } catch (err) {
+    console.error("Error fetching room players:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ==========================================
+// 3. GET /api/challenges
+// ==========================================
+app.get("/api/challenges", async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        id,
+        title,
+        description,
+        language,
+        jsonb_array_length(test_cases) AS "totalTests"
+      FROM challenges
+      ORDER BY id ASC;
+    `;
+
+    const { rows } = await pool.query(query);
+    return res.json({
+      challenges: rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        description: r.description,
+        language: r.language,
+        totalTests: r.totalTests || 0
+      }))
+    });
+  } catch (err) {
+    console.error("Error fetching challenges:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ==========================================
+// 4. GET /api/challenges/:id
+// ==========================================
+app.get("/api/challenges/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const query = `
+      SELECT 
+        id,
+        title,
+        description,
+        language,
+        buggy_code AS "buggyCode",
+        test_cases AS "testCases"
+      FROM challenges
+      WHERE id = $1;
+    `;
+
+    const { rows } = await pool.query(query, [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: `Challenge with ID ${id} not found` });
+    }
+
+    const ch = rows[0];
+    const testCases = Array.isArray(ch.testCases) ? ch.testCases : [];
+
+    // Filter out hidden tests and omit solution_code completely[cite: 1, 2]
+    const publicTestCases = testCases
+      .filter((tc) => !tc.hidden)
+      .map((tc) => ({
+        input: tc.input,
+        expected: tc.expected
+      }));
+
+    return res.json({
+      challenge: {
+        id: ch.id,
+        title: ch.title,
+        description: ch.description,
+        language: ch.language,
+        buggyCode: ch.buggyCode,
+        publicTestCases,
+        hiddenTestCount: testCases.filter((tc) => tc.hidden).length
+      }
+    });
+  } catch (err) {
+    console.error("Error fetching challenge by ID:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Mount Auth Endpoints
+app.use('/api/auth', authRouter);
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => {
   console.log(`Backend server active at http://localhost:${PORT}/api`);
