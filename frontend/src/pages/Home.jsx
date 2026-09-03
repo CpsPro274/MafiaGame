@@ -2,7 +2,6 @@ import { useNavigate } from 'react-router-dom';
 import StaggeredMenu from '../components/StaggeredMenu';
 import AnimatedLogo from '../components/AnimatedLogo';
 import {
-  ArrowRight,
   Code2,
   Eye,
   Users,
@@ -10,6 +9,7 @@ import {
   Shield,
   Vote,
 } from 'lucide-react';
+import { FlowButton } from '@/components/ui/flow-button';
 import styles from './styles/Home.module.css';
 
 const menuItems = [
@@ -88,14 +88,7 @@ export default function Home() {
           </p>
 
           <div className={styles.btngroup}>
-            <button
-              className={`${styles.btn} ${styles.btnPrimary} ${styles.btnLarge}`}
-              onClick={handleCreateGame}
-            >
-              <Code2 size={18} />
-              Create Game
-              <ArrowRight size={18} />
-            </button>
+            <FlowButton text="Create Game" onClick={handleCreateGame} />
 
             <button
               className={`${styles.btn} ${styles.btnSecondary} ${styles.btnLarge}`}
@@ -315,13 +308,7 @@ export default function Home() {
             Gather your team, start a match, and find out who you can trust.
           </p>
 
-          <button
-            className={`${styles.btn} ${styles.btnPrimary} ${styles.btnLarge}`}
-            onClick={handleCreateGame}
-          >
-            Start Playing
-            <ArrowRight size={18} />
-          </button>
+          <FlowButton text="Start Playing" onClick={handleCreateGame} />
         </section>
 
         <footer className={styles.footer}>

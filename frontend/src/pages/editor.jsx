@@ -96,8 +96,24 @@ export default function MonacoEditorPage() {
   /*
    * Role is received from game:started.
    */
-  const [playerRole, setPlayerRole] =
-    useState("DEVELOPER");
+  const [playerRole, setPlayerRole] = useState("DEVELOPER");
+
+  const DEFAULT_TESTS = [
+    { id: 1, name: "Test Case 1", input: { nums: [2, 7, 11, 15], target: 9 }, expected: [0, 1], status: "NOT RUN" },
+    { id: 2, name: "Test Case 2", input: { nums: [3, 2, 4], target: 6 }, expected: [1, 2], status: "NOT RUN" },
+    { id: 3, name: "Test Case 3", input: { nums: [3, 3], target: 6 }, expected: [0, 1], status: "NOT RUN" }
+  ];
+
+  const [testCases, setTestCases] = useState(DEFAULT_TESTS);
+  const [allTestsPassed, setAllTestsPassed] = useState(false);
+  const [showVotingModal, setShowVotingModal] = useState(false);
+  const [auditLogs, setAuditLogs] = useState([
+    { author: "System", action: "Match initialized. Testing suite ready.", time: "00:00" }
+  ]);
+  const [votes, setVotes] = useState({});
+  const [hasVoted, setHasVoted] = useState(false);
+  const [ejectionResult, setEjectionResult] = useState(null);
+  const [victoryData, setVictoryData] = useState(null);
 
   /*
    * Countdown Timer
@@ -194,6 +210,20 @@ export default function MonacoEditorPage() {
           }
         }
       );
+    });
+
+    socket.on("code:updated", ({ code: remoteCode, author }) => {
+      console.log(`[Collab Sync] Code updated by ${author}`);
+      if (typeof remoteCode !== "string") return;
+
+      isRemoteUpdate.current = true;
+      setCode(remoteCode);
+      if (editorRef.current && editorRef.current.getValue() !== remoteCode) {
+        editorRef.current.setValue(remoteCode);
+      }
+      setTimeout(() => {
+        isRemoteUpdate.current = false;
+      }, 50);
     });
 
     /*
@@ -760,76 +790,72 @@ export default function MonacoEditorPage() {
         );
       }
 
-      const passed =
-        Boolean(
-          data.allPassed
+      const passed = Boolean(data.allPassed);
+      setAllTestsPassed(passed);
+
+      if (data.results && Array.isArray(data.results)) {
+        setTestCases(
+          data.results.map((r, idx) => ({
+            id: idx + 1,
+            name: `Test Case ${idx + 1}`,
+            input: testCases[idx]?.input || { test: idx + 1 },
+            expected: r.expected,
+            actual: r.actual,
+            status: r.passed ? "PASSED" : "FAILED",
+            passed: r.passed
+          }))
         );
+      } else {
+        setTestCases((prev) =>
+          prev.map((tc) => ({
+            ...tc,
+            status: passed ? "PASSED" : "FAILED",
+            passed
+          }))
+        );
+      }
 
-      const output =
-        data.output ||
-        data.stdout ||
-        "";
+      const output = data.output || data.stdout || "";
+      const stderr = data.stderr || "";
 
-      const stderr =
-        data.stderr || "";
-
-      /*
-       * Display our local execution result.
-       */
       setExecutionResult({
-        status:
-          data.status ||
-          (passed
-            ? "success"
-            : "failed"),
-
+        status: data.status || (passed ? "success" : "failed"),
         passed,
-
         stdout: output,
-
         stderr,
-
-        exit_code:
-          data.exitCode,
-
-        executionTimeMs:
-          data.executionTimeMs,
+        exit_code: data.exitCode,
+        executionTimeMs: data.executionTimeMs
       });
 
-      /*
-       * --------------------------------------
-       * Tell the backend about the test result.
-       *
-       * This is what your backend uses for:
-       *
-       * - replay timeline
-       * - XP
-       * - test:result broadcast
-       * --------------------------------------
-       */
-      socketRef.current?.emit(
-        "test:run",
+      setAuditLogs((prev) => [
+        ...prev,
         {
-          roomCode,
-
           author: username,
-
-          authorRole:
-            playerRole,
-
-          passed,
-
-          details:
-            stderr ||
-            output ||
-            (passed
-              ? "All tests passed!"
-              : "Tests failed."),
-
-          code:
-            currentCode,
+          action: passed ? "Ran test suite (All Passed)" : "Ran test suite (Tests Failed)",
+          time: new Date().toLocaleTimeString()
         }
-      );
+      ]);
+
+      socketRef.current?.emit("test:run", {
+        roomCode,
+        author: username,
+        authorRole: playerRole,
+        passed,
+        details: stderr || output || (passed ? "All tests passed!" : "Tests failed."),
+        code: currentCode
+      });
+
+      if (submit && passed) {
+        setVictoryData({
+          winnerTeam: "DEVELOPERS",
+          message: "STAGE CLEARED: All Unit Tests Passed! Developer Team Victory!"
+        });
+        socketRef.current?.emit("game:finish", {
+          roomCode,
+          winnerTeam: "DEVELOPERS",
+          endReason: "All Unit Tests Fixed Successfully!"
+        });
+      }
     } catch (error) {
       console.error(
         "Run error:",
@@ -1069,435 +1095,287 @@ export default function MonacoEditorPage() {
       return;
     }
 
-    socketRef.current?.emit(
-      "code:edit",
-      {
-        roomCode,
-
-        author:
-          username,
-
-        authorRole:
-          playerRole,
-
-        code:
-          template,
-
-        details:
-          "Code reset",
-
-        activeLines: [],
-      }
-    );
+    socketRef.current?.emit("code:edit", {
+      roomCode,
+      author: username,
+      authorRole: playerRole,
+      code: template,
+      details: "Code reset",
+    });
   };
 
-  return (
-    <div
-      className={
-        styles.editorWrapper
-      }
-    >
-      {/* ==================== TOP BAR ==================== */}
+  const passedCount = testCases.filter((t) => t.status === "PASSED").length;
 
-      <header
-        className={
-          styles.topBar
-        }
-      >
-        <div
-          className={
-            styles.leftControls
-          }
-        >
-          <div
-            className={
-              styles.brand
-            }
-          >
-            <Code2 size={20} />
-            <span>
-              CodeMafia
-            </span>
+  return (
+    <div className={styles.editorWrapper}>
+      {/* ==================== TOP BAR ==================== */}
+      <header className={styles.topBar}>
+        <div className={styles.leftControls}>
+          <div className={styles.brand}>
+            <Code2 size={18} />
+            <span>CODE MAFIA</span>
           </div>
+
+          <div className={styles.divider} />
 
           <select
-            className={
-              styles.langSelect
-            }
+            className={styles.langSelect}
             value={language}
-            onChange={
-              handleLanguageChange
-            }
+            onChange={(e) => setLanguage(e.target.value)}
           >
-            <option value="javascript">
-              JavaScript
-            </option>
-
-            <option value="python">
-              Python
-            </option>
+            <option value="javascript">JavaScript</option>
+            <option value="python">Python</option>
           </select>
-
-          <button
-            type="button"
-            className={
-              styles.iconBtn
-            }
-            title="Reset code template"
-            onClick={
-              handleResetCode
-            }
-          >
-            <RotateCcw
-              size={15}
-            />
-          </button>
         </div>
 
-        <div
-          className={
-            styles.rightControls
-          }
-        >
-          <div
-            className={
-              styles.timerBadge
-            }
-          >
-            <Timer
-              size={16}
-              color="#ffa116"
-            />
-
-            <span
-              className={
-                styles.timerDisplay
-              }
-            >
-              {formatTime(
-                seconds
-              )}
-            </span>
+        <div className={styles.rightControls}>
+          <div className={styles.timerBadge}>
+            <Timer size={16} color="#ffa116" />
+            <span className={styles.timerDisplay}>{formatTime(seconds)}</span>
           </div>
 
-          <div
-            className={
-              styles.divider
-            }
-          />
+          <div className={styles.divider} />
 
           <button
             type="button"
-            className={
-              styles.runBtn
-            }
-            onClick={() =>
-              runCode(false)
-            }
-            disabled={
-              isRunning
-            }
+            className={styles.runBtn}
+            onClick={() => runCode(false)}
+            disabled={isRunning}
           >
-            <PlayCircle
-              size={15}
-            />
-
-            {isRunning
-              ? "Running..."
-              : "Run"}
+            <PlayCircle size={15} />
+            {isRunning ? "Running..." : "Run"}
           </button>
 
           <button
             type="button"
-            className={
-              styles.submitBtn
-            }
-            onClick={() =>
-              runCode(true)
-            }
-            disabled={
-              isRunning
-            }
+            className={styles.submitBtn}
+            onClick={() => runCode(true)}
+            disabled={isRunning || !allTestsPassed}
+            title={!allTestsPassed ? "All test cases must pass before submitting" : "Submit Solution"}
           >
             <Send size={14} />
-
-            {isRunning
-              ? "Submitting..."
-              : "Submit"}
+            {isRunning ? "Submitting..." : "Submit"}
           </button>
         </div>
       </header>
 
-      {/* ==================== EDITOR ==================== */}
+      {/* ==================== MAIN LAYOUT ==================== */}
+      <main className={styles.mainLayout}>
+        <div className={styles.editorColumn}>
+          {challenge && (
+            <section className={styles.challengePanel}>
+              <h1>{challenge.title || "Shopping Cart Discount Engine"}</h1>
+              <p>{challenge.description || "Fix loop boundary bugs to accurately calculate item subtotals."}</p>
+              <div className={styles.challengeMeta}>
+                <span>Language: {language}</span>
+                <span>Role: {playerRole}</span>
+                <span>Status: {allTestsPassed ? "ALL TESTS PASSED" : "PENDING FIX"}</span>
+              </div>
+            </section>
+          )}
 
-      <main
-        className={
-          styles.editorArea
-        }
-      >
-        {loadingChallenge && (
-          <div
-            className={
-              styles.challengeLoading
-            }
-          >
-            Loading challenge...
+          <div className={styles.monacoContainer}>
+            <Editor
+              height="100%"
+              width="100%"
+              language={language}
+              value={code}
+              theme="vs-dark"
+              onMount={(ed) => (editorRef.current = ed)}
+              onChange={handleCodeChange}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 14,
+                automaticLayout: true,
+                tabSize: 2,
+                wordWrap: "on",
+                lineNumbers: "on",
+              }}
+            />
           </div>
-        )}
-
-        {challengeError && (
-          <div
-            className={
-              styles.challengeError
-            }
-          >
-            {challengeError}
-          </div>
-        )}
-
-        {challenge && (
-          <section
-            className={
-              styles.challengePanel
-            }
-          >
-            <h1>
-              {challenge.title}
-            </h1>
-
-            <p>
-              {
-                challenge.description
-              }
-            </p>
-
-            <div
-              className={
-                styles.challengeMeta
-              }
-            >
-              <span>
-                Language:{" "}
-                {
-                  challenge.language
-                }
-              </span>
-
-              <span>
-                Tests:{" "}
-                {challenge
-                  .test_cases
-                  ?.length ||
-                  0}
-              </span>
-
-              <span>
-                Role:{" "}
-                {playerRole}
-              </span>
-            </div>
-          </section>
-        )}
-
-        <div
-          className={
-            styles.monacoContainer
-          }
-        >
-          <Editor
-            height="100%"
-            width="100%"
-            language={
-              language
-            }
-            value={code}
-            theme="vs-dark"
-            onMount={
-              handleEditorMount
-            }
-            onChange={
-              handleCodeChange
-            }
-            options={{
-              minimap: {
-                enabled: false,
-              },
-
-              fontSize: 14,
-
-              automaticLayout:
-                true,
-
-              tabSize: 2,
-
-              wordWrap: "on",
-
-              scrollBeyondLastLine:
-                false,
-
-              smoothScrolling:
-                true,
-
-              cursorBlinking:
-                "smooth",
-
-              bracketPairColorization:
-                {
-                  enabled:
-                    true,
-                },
-
-              padding: {
-                top: 12,
-                bottom: 12,
-              },
-
-              renderWhitespace:
-                "selection",
-
-              lineNumbers:
-                "on",
-
-              folding: true,
-
-              suggestOnTriggerCharacters:
-                true,
-            }}
-          />
         </div>
+
+        {/* ==================== RIGHT SIDE TEST CASES PANEL (NO EMOJIS) ==================== */}
+        <aside className={styles.testSidePanel}>
+          <div className={styles.testSideHeader}>
+            <h3 className={styles.testSideTitle}>Test Cases</h3>
+            <span className={styles.testSummaryBadge}>
+              {passedCount} / {testCases.length} Passed
+            </span>
+          </div>
+
+          <div className={styles.testList}>
+            {testCases.map((test, index) => (
+              <div key={test.id || index} className={styles.testCard}>
+                <div className={styles.testCardHeader}>
+                  <span className={styles.testName}>{test.name}</span>
+                  <span
+                    className={
+                      test.status === "PASSED"
+                        ? styles.badgePassed
+                        : test.status === "FAILED"
+                        ? styles.badgeFailed
+                        : styles.badgePending
+                    }
+                  >
+                    {test.status || "NOT RUN"}
+                  </span>
+                </div>
+
+                <div className={styles.testDetailRow}>
+                  <span className={styles.testLabel}>Input:</span>
+                  <pre className={styles.testCode}>{JSON.stringify(test.input, null, 2)}</pre>
+                </div>
+
+                <div className={styles.testDetailRow}>
+                  <span className={styles.testLabel}>Expected:</span>
+                  <pre className={styles.testCode}>{JSON.stringify(test.expected, null, 2)}</pre>
+                </div>
+
+                {test.actual !== undefined && (
+                  <div className={styles.testDetailRow}>
+                    <span className={styles.testLabel}>Actual:</span>
+                    <pre
+                      className={`${styles.testCode} ${
+                        test.status === "PASSED" ? styles.codeSuccess : styles.codeError
+                      }`}
+                    >
+                      {JSON.stringify(test.actual, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </aside>
       </main>
 
-      {/* ==================== OUTPUT PANEL ==================== */}
-
-      {executionResult && (
-        <section
-          className={
-            styles.outputPanel
-          }
-        >
-          <div
-            className={
-              styles.outputHeader
-            }
-          >
-            <div
-              className={
-                executionResult.passed
-                  ? styles.resultPassed
-                  : styles.resultFailed
-              }
-            >
-              {executionResult.passed
-                ? "✓ Passed"
-                : "✗ Failed"}
+      {/* ==================== VOTING TRIBUNAL MODAL ==================== */}
+      {showVotingModal && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modalContent}>
+            <div className={styles.modalHeader}>
+              <h2>Emergency Voting Tribunal</h2>
+              <p>Review player audit history, identify the hidden Mafia, and cast your vote.</p>
             </div>
 
-            {executionResult.exit_code !==
-              undefined && (
-              <span>
-                Exit code:{" "}
-                {
-                  executionResult.exit_code
-                }
-              </span>
+            {/* Audit Log Summary */}
+            <div>
+              <div className={styles.sectionTitle}>User Activity Audit Summary</div>
+              <div className={styles.auditContainer}>
+                {auditLogs.map((log, idx) => (
+                  <div key={idx} className={styles.auditItem}>
+                    <span className={styles.auditAuthor}>{log.author}:</span>
+                    <span className={styles.auditText}>{log.action}</span>
+                    <span className={styles.auditTime}>{log.time}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Ejection Result Banner */}
+            {ejectionResult && (
+              <div
+                className={`${styles.ejectionBanner} ${
+                  ejectionResult.wasMafia ? styles.ejectionSuccess : styles.ejectionWrong
+                }`}
+              >
+                {ejectionResult.message}
+              </div>
             )}
 
-            {executionResult.executionTimeMs !==
-              undefined && (
-              <span>
-                {
-                  executionResult.executionTimeMs
-                }{" "}
-                ms
-              </span>
-            )}
+            {/* Suspect Voting Cards */}
+            <div>
+              <div className={styles.sectionTitle}>Operatives in Room</div>
+              <div className={styles.suspectGrid}>
+                {players.map((p, idx) => {
+                  const voteCnt = votes[p.username] || 0;
+                  return (
+                    <div key={p.username || idx} className={styles.suspectCard}>
+                      <div className={styles.suspectName}>
+                        {p.username} {p.isHost && "(Host)"}
+                      </div>
+                      <div style={{ fontSize: "0.75rem", color: "hsl(var(--muted-foreground))" }}>
+                        Votes Received: {voteCnt}
+                      </div>
+                      <button
+                        type="button"
+                        className={styles.voteButton}
+                        onClick={() => handleCastVote(p.username)}
+                        disabled={hasVoted || p.username === username}
+                      >
+                        {hasVoted ? "VOTE CAST" : "VOTE SUSPECT"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "10px" }}>
+              <button
+                type="button"
+                className={styles.runBtn}
+                onClick={handleFinishVoting}
+              >
+                Tally Votes & Eject
+              </button>
+              <button
+                type="button"
+                className={styles.submitBtn}
+                onClick={() => setShowVotingModal(false)}
+              >
+                Return to Editor
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== VICTORY / GAME OVER MODAL ==================== */}
+      {victoryData && (
+        <div className={styles.modalOverlay}>
+          <div className={styles.modalContent} style={{ textAlign: "center", maxWidth: "520px" }}>
+            <div className={styles.modalHeader}>
+              <h2 style={{ color: "#22c55e", fontSize: "1.75rem" }}>
+                {victoryData.winnerTeam === "DEVELOPERS" ? "DEVELOPER VICTORY" : "MAFIA VICTORY"}
+              </h2>
+              <p>{victoryData.message}</p>
+            </div>
+
+            <div style={{ padding: "16px", backgroundColor: "hsl(var(--background))", borderRadius: "8px" }}>
+              <div className={styles.sectionTitle}>XP & Score Allocations</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", textAlign: "left" }}>
+                {players.map((p, idx) => (
+                  <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.875rem" }}>
+                    <span>{p.username} ({p.role || "DEVELOPER"})</span>
+                    <span style={{ color: "#22c55e", fontWeight: "600" }}>+150 XP</span>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             <button
               type="button"
-              className={
-                styles.closeOutputBtn
-              }
-              onClick={() =>
-                setExecutionResult(
-                  null
-                )
-              }
-              title="Close output"
+              className={styles.submitBtn}
+              onClick={() => (window.location.href = "/lobby")}
+              style={{ width: "100%", height: "44px" }}
             >
-              ×
+              Return to Lobby
             </button>
           </div>
-
-          {executionResult.stdout && (
-            <pre>
-              {
-                executionResult.stdout
-              }
-            </pre>
-          )}
-
-          {executionResult.stderr && (
-            <pre
-              className={
-                styles.errorOutput
-              }
-            >
-              {
-                executionResult.stderr
-              }
-            </pre>
-          )}
-
-          {!executionResult.stdout &&
-            !executionResult.stderr && (
-              <pre
-                className={
-                  styles.emptyOutput
-                }
-              >
-                No output returned.
-              </pre>
-            )}
-        </section>
+        </div>
       )}
 
       {/* ==================== STATUS BAR ==================== */}
-
-      <footer
-        className={
-          styles.statusBar
-        }
-      >
-        <div
-          className={
-            styles.statusIndicator
-          }
-        >
-          <span
-            className={
-              connected
-                ? styles.dotConnected
-                : styles.dotDisconnected
-            }
-          />
-
-          <span>
-            {connected
-              ? "Collaborative Online"
-              : "Local Mode"}
-          </span>
+      <footer className={styles.statusBar}>
+        <div className={styles.statusIndicator}>
+          <span className={connected ? styles.dotConnected : styles.dotDisconnected} />
+          <span>{connected ? "Collaborative Online" : "Local Mode"}</span>
         </div>
 
-        <div>
-          Room:{" "}
-          {roomCode ||
-            "default"}
-        </div>
-
-        <div>
-          Players:{" "}
-          {players.length}
-        </div>
+        <div>Room: {roomCode || "default"}</div>
+        <div>Players: {players.length}</div>
       </footer>
     </div>
   );

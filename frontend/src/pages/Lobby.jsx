@@ -2,6 +2,7 @@ import React,{ useEffect, useState } from "react";
 import{ useNavigate } from "react-router-dom";
 import styles from "./styles/Lobby.module.css";
 import { socket } from "../socket";
+import { FlowButton } from "@/components/ui/flow-button";
 
 export default function Lobby(){
   const navigate = useNavigate();
@@ -480,29 +481,12 @@ export default function Lobby(){
                 </div>
               </div>
 
-              <button
+              <FlowButton
                 type="submit"
-                className={
-                  styles.primaryButton
-                }
-                disabled={
-                  loading || !connected
-                }
-              >
-                <span>
-                 {loading
-                    ? "CREATING..."
-                    : "CREATE LOBBY"}
-                </span>
-
-                <span
-                  className={
-                    styles.buttonArrow
-                  }
-                >
-                  →
-                </span>
-              </button>
+                className="mt-6 w-full justify-center"
+                disabled={loading || !connected}
+                text={loading ? "CREATING..." : "CREATE LOBBY"}
+              />
             </form>
           )}
 
@@ -607,29 +591,12 @@ export default function Lobby(){
                     </div>
                   </div>
 
-                  <button
+                  <FlowButton
                     type="submit"
-                    className={
-                      styles.primaryButton
-                    }
-                    disabled={
-                      loading || !connected
-                    }
-                  >
-                    <span>
-                     {loading
-                        ? "JOINING..."
-                        : "ENTER LOBBY"}
-                    </span>
-
-                    <span
-                      className={
-                        styles.buttonArrow
-                      }
-                    >
-                      →
-                    </span>
-                  </button>
+                    className="mt-6 w-full justify-center"
+                    disabled={loading || !connected}
+                    text={loading ? "JOINING..." : "ENTER LOBBY"}
+                  />
                 </div>
 
                 <div

@@ -1,50 +1,32 @@
-.editorWrapper {
-  position: relative;
-
-  display: flex;
-  flex-direction: column;
-
-  width: 100vw;
-  height: 100vh;
-
-  margin: 0;
-  padding: 0;
-
-  overflow: hidden;
-
-  background-color: hsl(var(--background));
-  color: hsl(var(--foreground));
-
-  font-family:
-    Inter,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-}
-
 /* =========================================================
-   TOP BAR
+   CODE MAFIA - CLEAN MODERN DESIGN SYSTEM
    ========================================================= */
 
-.topBar {
-  flex: 0 0 48px;
+.editorWrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
 
+/* TOP BAR */
+.topBar {
+  flex: 0 0 50px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-
   width: 100%;
-
   padding: 0 16px;
-
-  background-color: hsl(var(--background));
-
+  background-color: hsl(var(--card));
   border-bottom: 1px solid hsl(var(--border));
-
   user-select: none;
-
   box-sizing: border-box;
 }
 
@@ -52,278 +34,78 @@
 .rightControls {
   display: flex;
   align-items: center;
-
   gap: 12px;
-
-  min-width: 0;
 }
 
 .brand {
   display: flex;
   align-items: center;
-
   gap: 8px;
-
-  color: hsl(var(--foreground));
-
+  font-weight: 800;
   font-size: 0.95rem;
-  font-weight: 600;
-
-  white-space: nowrap;
-}
-
-/* =========================================================
-   LANGUAGE SELECT
-   ========================================================= */
-
-.langSelect {
-  appearance: none;
-
-  background-color: hsl(var(--background));
+  letter-spacing: 0.05em;
   color: hsl(var(--foreground));
-
-  border: 1px solid hsl(var(--border));
-
-  border-radius: var(--radius);
-
-  padding: 5px 28px 5px 10px;
-
-  font-size: 0.875rem;
-
-  outline: none;
-
-  cursor: pointer;
-
-  transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease;
 }
-
-.langSelect:hover {
-  background-color: hsl(var(--muted));
-}
-
-.langSelect:focus {
-  border-color: hsl(var(--primary));
-}
-
-/* =========================================================
-   RESET BUTTON
-   ========================================================= */
-
-.iconBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  width: 28px;
-  height: 28px;
-
-  padding: 0;
-
-  background: transparent;
-
-  border: none;
-
-  border-radius: calc(var(--radius) - 2px);
-
-  color: hsl(var(--muted-foreground));
-
-  cursor: pointer;
-
-  transition:
-    color 0.15s ease,
-    background-color 0.15s ease;
-}
-
-.iconBtn:hover {
-  color: hsl(var(--foreground));
-
-  background-color: hsl(var(--muted));
-}
-
-.iconBtn:active {
-  transform: scale(0.95);
-}
-
-/* =========================================================
-   TIMER
-   ========================================================= */
-
-.timerBadge {
-  display: flex;
-  align-items: center;
-
-  gap: 8px;
-
-  min-width: 88px;
-
-  padding: 5px 10px;
-
-  background-color: hsl(var(--muted));
-
-  border: 1px solid hsl(var(--border));
-
-  border-radius: var(--radius);
-
-  color: hsl(var(--foreground));
-
-  font-size: 0.875rem;
-
-  box-sizing: border-box;
-
-  transition: border-color 0.25s ease, box-shadow 0.25s ease;
-}
-
-.timerBadge:hover {
-  border-color: hsl(var(--primary));
-  box-shadow: 0 0 10px rgba(82, 39, 255, 0.25);
-}
-
-.timerDisplay {
-  min-width: 66px;
-
-  text-align: center;
-
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Monaco,
-    Consolas,
-    monospace;
-
-  font-weight: 500;
-
-  font-variant-numeric: tabular-nums;
-}
-
-.editorArea {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 1;
-}
-
-.challengePanel {
-  padding: 16px 20px;
-  background: #1e1e1e;
-  border-bottom: 1px solid #333;
-  color: #fff;
-  flex-shrink: 0;
-  transition: border-color 0.3s ease, box-shadow 0.3s ease;
-}
-
-.challengePanel:hover {
-  border-bottom-color: hsl(var(--primary));
-}
-
-.challengePanel h1 {
-  margin: 0 0 8px;
-  font-size: 20px;
-}
-
-.challengePanel p {
-  margin: 0 0 12px;
-  color: #b8b8b8;
-  line-height: 1.5;
-}
-
-.challengeMeta {
-  display: flex;
-  gap: 20px;
-  color: #888;
-  font-size: 13px;
-}
-
-.monacoContainer {
-  flex: 1;
-  min-height: 0;
-}
-
-.challengeLoading,
-.challengeError {
-  padding: 15px 20px;
-  background: #1e1e1e;
-  color: #aaa;
-}
-
-.challengeError {
-  color: #ff6b6b;
-}
-
-/* =========================================================
-   DIVIDER
-   ========================================================= */
 
 .divider {
   width: 1px;
   height: 20px;
-
   background-color: hsl(var(--border));
-
-  flex-shrink: 0;
 }
 
-/* =========================================================
-   RUN BUTTON
-   ========================================================= */
+.langSelect {
+  height: 32px;
+  padding: 0 10px;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  font-weight: 500;
+  outline: none;
+}
+
+.timerBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background-color: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
 
 .runBtn,
 .submitBtn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-
   gap: 6px;
-
-  height: 30px;
-
-  padding: 0 12px;
-
+  height: 32px;
+  padding: 0 14px;
   border-radius: var(--radius);
-
-  font-size: 0.875rem;
-  font-weight: 500;
-
+  font-size: 0.85rem;
+  font-weight: 600;
   cursor: pointer;
-
-  transition:
-    background-color 0.15s ease,
-    opacity 0.15s ease,
-    transform 0.1s ease;
-
-  white-space: nowrap;
+  transition: all 0.2s ease;
 }
 
 .runBtn {
-  background-color: transparent;
-
+  background-color: hsl(var(--background));
   color: hsl(var(--foreground));
-
   border: 1px solid hsl(var(--border));
 }
 
 .runBtn:hover:not(:disabled) {
-  background-color: hsl(var(--muted));
+  border-color: hsl(var(--primary));
 }
-
-.runBtn:active:not(:disabled),
-.submitBtn:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-/* =========================================================
-   SUBMIT BUTTON
-   ========================================================= */
 
 .submitBtn {
-  padding: 0 14px;
-
   background-color: hsl(var(--primary));
-
   color: hsl(var(--primary-foreground));
-
   border: 1px solid hsl(var(--primary));
 }
 
@@ -331,328 +113,393 @@
   opacity: 0.9;
 }
 
-/* =========================================================
-   DISABLED BUTTONS
-   ========================================================= */
-
 .runBtn:disabled,
 .submitBtn:disabled {
-  opacity: 0.55;
-
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* =========================================================
-   EDITOR AREA
-   ========================================================= */
-
-.editorArea {
-  position: relative;
-
+/* MAIN LAYOUT & EDITOR COLUMN */
+.mainLayout {
+  display: flex;
   flex: 1 1 auto;
-
   width: 100%;
-
-  min-width: 0;
+  height: calc(100vh - 82px);
   min-height: 0;
-
   overflow: hidden;
-
   background-color: #1e1e1e;
 }
 
-/*
- * Monaco creates internal elements that need the parent
- * to have a real size. These rules make the editor fill
- * the available area.
- */
-
-.editorArea > div {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-/* =========================================================
-   OUTPUT PANEL
-   ========================================================= */
-
-.outputPanel {
-  position: absolute;
-
-  left: 0;
-  right: 0;
-  bottom: 32px;
-
-  height: 35%;
-
-  min-height: 150px;
-  max-height: 50%;
-
+.editorColumn {
+  flex: 1;
   display: flex;
   flex-direction: column;
-
-  overflow: hidden;
-
-  z-index: 20;
-
-  background-color: hsl(var(--background));
-
-  border-top: 1px solid hsl(var(--border));
-
-  color: hsl(var(--foreground));
-
-  box-shadow:
-    0 -8px 25px rgba(0, 0, 0, 0.25);
+  min-width: 0;
+  min-height: 0;
+  position: relative;
 }
 
-/* =========================================================
-   OUTPUT HEADER
-   ========================================================= */
-
-.outputHeader {
-  flex: 0 0 42px;
-
-  display: flex;
-  align-items: center;
-
-  gap: 16px;
-
-  padding: 0 16px;
-
-  background-color: hsl(var(--muted));
-
+.challengePanel {
+  padding: 16px 20px;
+  background-color: hsl(var(--card));
   border-bottom: 1px solid hsl(var(--border));
+}
 
+.challengePanel h1 {
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+}
+
+.challengePanel p {
+  margin: 0 0 10px;
   font-size: 0.875rem;
-
-  box-sizing: border-box;
-}
-
-.outputHeader strong {
-  font-weight: 600;
-}
-
-.resultPassed {
-  color: #22c55e;
-
-  font-weight: 600;
-}
-
-.resultFailed {
-  color: #ef4444;
-
-  font-weight: 600;
-}
-
-.outputHeader span {
   color: hsl(var(--muted-foreground));
-
-  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
-/* =========================================================
-   CLOSE OUTPUT
-   ========================================================= */
-
-.closeOutputBtn {
+.challengeMeta {
   display: flex;
-  align-items: center;
-  justify-content: center;
-
-  width: 28px;
-  height: 28px;
-
-  margin-left: auto;
-
-  padding: 0;
-
-  background: transparent;
-
-  border: none;
-
-  border-radius: var(--radius);
-
-  color: hsl(var(--muted-foreground));
-
-  font-size: 22px;
-  line-height: 1;
-
-  cursor: pointer;
+  gap: 16px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: hsl(var(--primary));
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-.closeOutputBtn:hover {
-  background-color: hsl(var(--background));
-
-  color: hsl(var(--foreground));
-}
-
-/* =========================================================
-   OUTPUT TEXT
-   ========================================================= */
-
-.outputPanel pre {
+.monacoContainer {
   flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+}
 
-  margin: 0;
-
-  padding: 16px;
-
+/* RIGHT SIDE TEST CASES PANEL */
+.testSidePanel {
+  width: 360px;
+  flex-shrink: 0;
+  background-color: hsl(var(--card));
+  border-left: 1px solid hsl(var(--border));
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
-
-  background-color: hsl(var(--background));
-
-  color: hsl(var(--foreground));
-
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Monaco,
-    Consolas,
-    monospace;
-
-  font-size: 0.875rem;
-
-  line-height: 1.6;
-
-  white-space: pre-wrap;
-
-  word-break: break-word;
-
+  padding: 18px;
   box-sizing: border-box;
+  z-index: 10;
 }
 
-.errorOutput {
-  color: #f87171 !important;
-
-  background-color: rgba(239, 68, 68, 0.06) !important;
-}
-
-.emptyOutput {
-  color: hsl(var(--muted-foreground)) !important;
-}
-
-/* =========================================================
-   STATUS BAR
-   ========================================================= */
-
-.statusBar {
-  flex: 0 0 32px;
-
+.testSideHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid hsl(var(--border));
+}
 
-  width: 100%;
+.testSideTitle {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: hsl(var(--foreground));
+  margin: 0;
+}
 
-  padding: 0 16px;
-
-  box-sizing: border-box;
-
+.testSummaryBadge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
   background-color: hsl(var(--background));
+  border: 1px solid hsl(var(--primary) / 0.4);
+  color: hsl(var(--primary));
+  letter-spacing: 0.02em;
+}
 
-  border-top: 1px solid hsl(var(--border));
+.testList {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
 
+.testCard {
+  padding: 14px;
+  background-color: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.testCard:hover {
+  transform: translateY(-2px);
+  border-color: hsl(var(--primary));
+  box-shadow: 0 4px 14px -2px rgba(82, 39, 255, 0.16);
+}
+
+.testCardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.testName {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+}
+
+.badgePassed {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background-color: rgba(34, 197, 94, 0.18);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  letter-spacing: 0.04em;
+}
+
+.badgeFailed {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background-color: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  letter-spacing: 0.04em;
+}
+
+.badgePending {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background-color: hsl(var(--muted));
   color: hsl(var(--muted-foreground));
-
-  font-size: 0.75rem;
-
-  user-select: none;
+  border: 1px solid hsl(var(--border));
+  letter-spacing: 0.04em;
 }
 
-.statusBar > div {
-  white-space: nowrap;
+.testDetailRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
 }
 
-/* =========================================================
-   CONNECTION STATUS
-   ========================================================= */
+.testLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: hsl(var(--muted-foreground));
+}
+
+.testCode {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.82rem;
+  padding: 8px 12px;
+  background-color: #121212;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  color: #e2e8f0;
+  word-break: break-word;
+  white-space: pre-wrap;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.codeSuccess {
+  color: #4ade80;
+  border-color: rgba(34, 197, 94, 0.4);
+  background-color: rgba(34, 197, 94, 0.05);
+}
+
+.codeError {
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.4);
+  background-color: rgba(239, 68, 68, 0.05);
+}
+
+/* MODAL OVERLAY & VOTING TRIBUNAL */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modalContent {
+  width: min(700px, 92%);
+  max-height: 85vh;
+  overflow-y: auto;
+  background-color: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+.modalHeader h2 {
+  margin: 0 0 4px;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: hsl(var(--foreground));
+}
+
+.modalHeader p {
+  margin: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.85rem;
+}
+
+.sectionTitle {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 8px;
+}
+
+.auditContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  padding: 12px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.auditItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.82rem;
+}
+
+.auditAuthor {
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.auditText {
+  color: hsl(var(--muted-foreground));
+  flex: 1;
+}
+
+.auditTime {
+  font-size: 0.72rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.suspectGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.suspectCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background-color: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+}
+
+.suspectName {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: hsl(var(--foreground));
+}
+
+.voteButton {
+  width: 100%;
+  height: 32px;
+  border: 1px solid hsl(var(--primary));
+  border-radius: calc(var(--radius) - 2px);
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.voteButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ejectionBanner {
+  padding: 14px;
+  border-radius: var(--radius);
+  text-align: center;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.ejectionSuccess {
+  background-color: rgba(34, 197, 94, 0.15);
+  border: 1px solid #22c55e;
+  color: #22c55e;
+}
+
+.ejectionWrong {
+  background-color: rgba(239, 68, 68, 0.15);
+  border: 1px solid #ef4444;
+  color: #ef4444;
+}
+
+/* STATUS BAR */
+.statusBar {
+  flex: 0 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background-color: hsl(var(--card));
+  border-top: 1px solid hsl(var(--border));
+  font-size: 0.78rem;
+  color: hsl(var(--muted-foreground));
+  box-sizing: border-box;
+}
 
 .statusIndicator {
   display: flex;
   align-items: center;
-
-  gap: 6px;
-}
-
-.dotConnected,
-.dotDisconnected {
-  width: 7px;
-  height: 7px;
-
-  flex-shrink: 0;
-
-  border-radius: 50%;
+  gap: 8px;
 }
 
 .dotConnected {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
   background-color: #22c55e;
-
-  box-shadow:
-    0 0 6px rgba(34, 197, 94, 0.65);
 }
 
 .dotDisconnected {
-  background-color: hsl(var(--muted-foreground));
-}
-
-/* =========================================================
-   RESPONSIVE
-   ========================================================= */
-
-@media (max-width: 700px) {
-  .topBar {
-    padding: 0 10px;
-  }
-
-  .leftControls,
-  .rightControls {
-    gap: 6px;
-  }
-
-  .brand span {
-    display: none;
-  }
-
-  .timerBadge {
-    min-width: auto;
-
-    padding: 5px 7px;
-  }
-
-  .timerDisplay {
-    min-width: auto;
-  }
-
-  .runBtn,
-  .submitBtn {
-    padding: 0 8px;
-  }
-
-  .runBtn svg,
-  .submitBtn svg {
-    display: none;
-  }
-
-  .statusBar {
-    padding: 0 10px;
-  }
-}
-
-/* =========================================================
-   VERY SMALL SCREENS
-   ========================================================= */
-
-@media (max-width: 450px) {
-  .statusBar > div:nth-child(2) {
-    display: none;
-  }
-
-  .langSelect {
-    max-width: 110px;
-  }
-
-  .outputPanel {
-    height: 45%;
-  }
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #ef4444;
 }

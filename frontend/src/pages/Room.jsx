@@ -114,7 +114,23 @@ export default function Room() {
   };
 
   const handleCopyCode = () => {
-    navigator.clipboard.writeText(roomCode);
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      navigator.clipboard.writeText(roomCode).catch(() => {});
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = roomCode;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      try {
+        document.execCommand("copy");
+      } catch (err) {
+        console.error("Copy fallback error:", err);
+      }
+      document.body.removeChild(textarea);
+    }
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
