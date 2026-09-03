@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "@y/websocket-server": "^0.1.5",
     "bcryptjs": "^3.0.3",
     "dockernode": "^0.1.0",
     "dockerode": "^5.0.1",
@@ -10,7 +11,7 @@
     "socket.io": "^4.8.3",
     "uuid": "^14.0.2",
     "ws": "^8.21.3",
-    "y-websocket": "^3.1.0",
+    "y-websocket": "^1.5.4",
     "yjs": "^13.6.32"
   },
   "name": "backend",

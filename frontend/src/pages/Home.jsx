@@ -41,22 +41,12 @@ export default function Home() {
 
   function handleCreateGame() {
     const token = localStorage.getItem('token');
-
-    if (token) {
-      navigate('/dashboard');
-    } else {
-      navigate('/login');
-    }
+    navigate('/lobby');
   }
 
   function handleJoinGame() {
     const token = localStorage.getItem('token');
-
-    if (token) {
-      navigate('/dashboard');
-    } else {
-      navigate('/login');
-    }
+    navigate('/lobby');
   }
 
   return (

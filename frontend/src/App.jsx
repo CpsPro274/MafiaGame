@@ -2,9 +2,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
-import Dashboard from "./pages/Dashboard";
+import Lobby from "./pages/Lobby";
 import Onboarding from "./pages/Onboarding";
-import Preview from "./pages/Preview"
 import Editor from "./pages/editor"
 
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -17,7 +16,7 @@ function App() {
         <Route path="/" element={<Navigate to="/login" replace/>}/>
         <Route path="/login" element={<Login />} />
         <Route path="/home" element={<Home />}/>
-        <Route path="/dashboard" element={<Dashboard />}/>
+        <Route path="/lobby" element={<Lobby />}/>
         <Route path="/onboarding" element={<Onboarding />}/>
         <Route path="/editor/:gameId" element={<Editor />}/>
       </Routes>
