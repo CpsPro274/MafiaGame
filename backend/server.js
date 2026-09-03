@@ -89,17 +89,14 @@ app.get("/api/rooms/:roomCode", (req, res) => {
 // ==========================================
 io.on("connection", (socket) => {
   console.log(`[Socket Connected] ID: ${socket.id}`);
-
-  // 1. CREATE ROOM (with Difficulty Support)
-  socket.on("room:create", async ({ username, difficulty = "MEDIUM" }, callback) => {
+  socket.on("room:create", async ({ username, difficulty = "MEDIUM", maxPlayers=8 }, callback) => {
     try {
       if (!username || !username.trim()) {
         return callback?.({ success: false, error: "Username is required." });
       }
 
-      const { room, player } = createRoom(socket.id, username, difficulty);
+      const { room, player } = createRoom(socket.id, username, difficulty, Number(maxPlayers));
       socket.join(room.roomCode);
-
       console.log(`[Room Created] Code: ${room.roomCode} (${room.difficulty}) by ${username}`);
 
       callback?.({
