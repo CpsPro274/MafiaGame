@@ -1,175 +1,188 @@
-.container{
-  display: flex;
-  width: 100%;
-  min-height: 100vh;
-  background-color: var(--bg);
-}
-.main{
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  min-height: 100vh;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
-}
-
-.description{
-  max-width: 650px;
-  width: 100%;
-  margin: 1rem 0 0;
-  color: var(--muted);
-  font-size: 1.1rem;
-  line-height: 1.6;
-  text-align: center;
-}
-
-.sidebarContent{
+.editorWrapper {
   display: flex;
   flex-direction: column;
-  width: 100%;
-  height: 100%;
-  gap: 1rem; 
-}
-
-.logo{
-  width: 60px;
-  height: 60px;
-  margin: 0 auto 1rem;
-
-  border-radius: 50%;
+  height: 100vh;
+  width: 100vw;
+  background-color: #1a1a1a;
+  color: #e5e7eb;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   overflow: hidden;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
-.header{
+.topBar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 0 30px;
+  justify-content: space-between;
+  height: 48px;
+  padding: 0 16px;
+  background-color: #262626;
+  border-bottom: 1px solid #333333;
+  user-select: none;
+}
+
+.leftControls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #ffa116; /* LeetCode orange accent */
+}
+
+.langSelect {
+  background-color: #333333;
+  color: #eff1f6;
+  border: 1px solid #4a4a4a;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.langSelect:hover {
+  background-color: #3e3e3e;
+}
+
+.rightControls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* LeetCode Style Timer */
+.timerBadge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: #333333;
+  border: 1px solid #424242;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.88rem;
+  color: #eff1f6;
+  transition: border-color 0.2s ease;
+}
+
+.timerBadge:hover {
+  border-color: #606060;
+}
+
+.timerDisplay {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-weight: 600;
-  font-size: 1.7rem;
-}
-
-.title{
-  margin:0;
-  width: 100%;
-  color: var(--white);
-  font-size: 3rem;
-  font-weight: 800;
-  line-height: 1.1;
+  letter-spacing: 0.5px;
+  min-width: 66px;
   text-align: center;
 }
-.gradient{
-  background: linear-gradient(
-    to right, var(--purple-light), var(--primary)
-  );
-  background-clip: text;
-  -webkit-background-clip: text;
-  color: transparent;
-}
 
-.links{
+.iconBtn {
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  padding: 2px;
+  border-radius: 4px;
+  cursor: pointer;
   display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-  font-size: 1.1rem;
-}
-.chatContent{ 
-  width: 100%; 
-  max-width: 900px; 
-  display: flex; 
-  flex-direction: column; 
   align-items: center;
   justify-content: center;
+  transition: color 0.15s ease, background-color 0.15s ease;
 }
-.chatContainer{ 
-  display: flex; 
-  align-items: center; 
-  justify-content: center;
-  width: 100%; 
-  margin-top: 40px; 
-  gap: 12px; 
+
+.iconBtn:hover {
+  color: #ffffff;
+  background-color: #4a4a4a;
 }
-.input{
-  flex:1;
-  min-width: 0;
-  padding: 0.8rem;
-  border-radius: var(--radius);
-  border: 1px solid var(--muted);
-  font-size: 1rem;
+
+.divider {
+  width: 1px;
+  height: 20px;
+  background-color: #424242;
 }
-.input:focus{
-  border-color: var(--primary);
-}
-.input::placeholder{
-  color: var(--muted);
-}
-.btn{
-  border: none;
-  border-radius: var(--radius);
+
+/* Action Buttons */
+.runBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #333333;
+  color: #e5e7eb;
+  border: 1px solid #4a4a4a;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 500;
   cursor: pointer;
-  font: inherit;
-  transition: var(--transition);
-}
-.btnLarge{
-  padding: 1rem 1.5rem;
-  font-size: 1rem;
-}
-.btnPrimary{
-  background: var(--primary);
-  color: var(--white);
-}
-.btnPrimary:hover{
-  background: var(--primary-hover);
-  transform: translateY(-2px);
+  transition: all 0.15s ease;
 }
 
-.bottomLinks{
-  margin-top: auto;
+.runBtn:hover {
+  background-color: #424242;
+  color: #fff;
 }
 
-@media (max-width: 768px){
-  .container{
-    flex-direction: column;
-  }
-  .main{
-    min-height: calc(100vh - 70px);
-    padding: 1.5rem 1rem;
-  }
-  .title{
-    font-size: 2.2rem;
-  }
-  .description{
-    font-size: 1rem;
-  }
-  .chatContainer{
-    margin-top: 25px;
-    gap: 8px;
-  }
-  .btnLarge{
-    padding: 0.8rem 1.2rem;
-    font-size: 0.9rem;
-  }
+.submitBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #2cbb5d;
+  color: #ffffff;
+  border: none;
+  padding: 5px 14px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
 }
-@media (max-width: 480px) {
-  .main {
-    padding: 1rem;
-  }
-  .title {
-    font-size: 1.8rem;
-  }
-  .chatContainer {
-    gap: 6px;
-  }
-  .input {
-    font-size: 0.9rem;
-  }
-  .btnLarge {
-    padding: 0.7rem 0.9rem;
-    font-size: 0.9rem;
-  }
+
+.submitBtn:hover {
+  background-color: #27a854;
+}
+
+.editorArea {
+  flex: 1;
+  position: relative;
+  width: 100%;
+  height: calc(100vh - 80px);
+  background-color: #1e1e1e;
+}
+
+.statusBar {
+  height: 32px;
+  background-color: #1a1a1a;
+  border-top: 1px solid #2e2e2e;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  font-size: 0.78rem;
+  color: #8c8c8c;
+}
+
+.statusIndicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dotConnected {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #2cbb5d;
+}
+
+.dotDisconnected {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #ef4444;
 }
