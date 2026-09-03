@@ -402,7 +402,7 @@ app.get("/api/challenges/:id", async (req, res) => {
     return res.status(500).json({ error: "Internal server error" });
   }
 });
-
+  
 // 8. Auth Router Mount
 app.use('/api/auth', authRouter);
 app.use('/api', runRoutes);
