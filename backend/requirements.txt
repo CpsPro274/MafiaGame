@@ -1,1 +1,1 @@
-express dockernode uuid socket.io yjs y-websocket 
+express dockernode uuid socket.io yjs y-websocket bcryptjs jsonwebtoken
