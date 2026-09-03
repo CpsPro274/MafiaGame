@@ -1,1 +1,1 @@
-express dockerode uuidexpress dockerode uuid pg dotenv
+express dockernode uuid socket.io yjs y-websocket
