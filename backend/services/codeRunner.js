@@ -11,42 +11,82 @@ const RUNNER_IMAGES = {
   javascript: 'runner-node:latest'
 };
 
-// Stream collector that accumulates output AND echoes directly to terminal console
 class ConsoleAndBufferCollector extends Writable {
   constructor(consoleStream) {
     super();
     this.data = '';
-    this.consoleStream = consoleStream; // process.stdout or process.stderr
+    this.consoleStream = consoleStream;
   }
-
   _write(chunk, encoding, callback) {
     const text = chunk.toString();
     this.data += text;
     if (this.consoleStream) {
-      this.consoleStream.write(text); // Prints live to host console
+      this.consoleStream.write(text);
     }
     callback();
   }
 }
 
 /**
- * Executes user/Mafia code within an isolated, ephemeral Docker sandbox[cite: 1].
- * Logs are streamed to the server console and packaged for frontend consumption[cite: 1].
+ * Builds the test suite script from raw test case objects.
  */
-export async function executeCode({
-  submission_id,
-  room_id = null,
-  language,
-  files,
-  command,
-  timeout_seconds = 10
+function buildTestHarness(language, testCases = []) {
+  if (language === 'python') {
+    const testFunctions = testCases
+      .map((tc, index) => {
+        const invocation = String(tc.input).trim().startsWith('(')
+          ? `solution${tc.input}`
+          : `solution(${tc.input})`;
+
+        return [
+          `def test_case_${index}():`,
+          `    # hidden: ${Boolean(tc.hidden)}`,
+          `    assert ${invocation} == ${tc.expected}`
+        ].join('\n');
+      })
+      .join('\n\n');
+
+    return [
+      'import pytest',
+      'from solution import solution',
+      '',
+      testFunctions
+    ].join('\n');
+  }
+
+  throw new Error(`Unsupported language test generator: ${language}`);
+}
+
+/**
+ * Pure execution function: receives raw inputs and returns standard test output.
+ *
+ * @param {Object} params
+ * @param {string} params.code The player/shared code to test
+ * @param {Array<{input: string, expected: string, hidden?: boolean}>} params.testCases Array matching DB test_cases
+ * @param {'python'|'javascript'} [params.language='python'] Target language runtime
+ * @param {number} [params.timeoutSeconds=10] Container timeout limit in seconds
+ * @returns {Promise<{
+ *   status: 'passed' | 'failed' | 'timeout' | 'error',
+ *   allPassed: boolean,
+ *   exitCode: number,
+ *   stdout: string,
+ *   stderr: string,
+ *   output: string,
+ *   executionTimeMs: number
+ * }>}
+ */
+export async function runCode({
+  code,
+  testCases = [],
+  language = 'python',
+  timeoutSeconds = 10
 }) {
   const image = RUNNER_IMAGES[language];
   if (!image) {
-    throw new Error(`Unsupported language: ${language}`);
+    throw new Error(`Unsupported language runtime: ${language}`);
   }
 
-  const runId = `${submission_id}_${uuidv4().slice(0, 8)}`;
+  const runId = `run_${uuidv4().slice(0, 8)}`;
   const tempDir = path.join('/tmp/runs', runId);
   await fs.mkdir(tempDir, { recursive: true });
 
@@ -54,16 +94,15 @@ export async function executeCode({
   const startTime = Date.now();
 
   try {
-    // Write submission files and defined tests to isolated temp dir[cite: 1]
-    for (const file of files) {
-      const filePath = path.join(tempDir, file.name);
-      await fs.writeFile(filePath, file.content, 'utf-8');
-    }
+    const testContent = buildTestHarness(language, testCases);
+    await fs.writeFile(path.join(tempDir, 'solution.py'), code, 'utf-8');
+    await fs.writeFile(path.join(tempDir, 'test_solution.py'), testContent, 'utf-8');
 
-    // Ephemeral container with restricted privileges to isolate untrusted code[cite: 1]
+    const runCommand = 'pytest -p no:cacheprovider test_solution.py';
+
     container = await docker.createContainer({
       Image: image,
-      Cmd: ['/bin/sh', '-c', command],
+      Cmd: ['/bin/sh', '-c', runCommand],
       WorkingDir: '/home/runner/app',
       Tty: false,
       AttachStdout: true,
@@ -86,14 +125,12 @@ export async function executeCode({
       stderr: true
     });
 
-    // Pipe directly to host console while buffering for the API response
     const stdoutCollector = new ConsoleAndBufferCollector(process.stdout);
     const stderrCollector = new ConsoleAndBufferCollector(process.stderr);
     docker.modem.demuxStream(logStream, stdoutCollector, stderrCollector);
 
     await container.start();
 
-    // Guard against infinite loops or stalling via synchronous flag and async kill[cite: 1]
     let timedOut = false;
     let timer;
 
@@ -102,60 +139,44 @@ export async function executeCode({
         timedOut = true;
         container.kill().catch(() => {});
         reject(new Error('EXECUTION_TIMEOUT'));
-      }, timeout_seconds * 1000);
+      }, timeoutSeconds * 1000);
     });
 
     const waitPromise = container.wait().then((res) => {
       clearTimeout(timer);
-      if (timedOut) {
-        throw new Error('EXECUTION_TIMEOUT');
-      }
+      if (timedOut) throw new Error('EXECUTION_TIMEOUT');
       return res;
     });
 
     const result = await Promise.race([waitPromise, timeoutPromise]);
     const executionTimeMs = Date.now() - startTime;
     const exitCode = result.StatusCode;
+    const isPassed = exitCode === 0;
 
     return {
-      submission_id,
-      room_id,
-      status: exitCode === 0 ? 'passed' : 'failed',
-      exit_code: exitCode,
+      status: isPassed ? 'passed' : 'failed',
+      allPassed: isPassed,
+      exitCode,
       stdout: stdoutCollector.data,
       stderr: stderrCollector.data,
-      output: (stdoutCollector.data + stderrCollector.data).trim(), // Combined convenience field for frontend terminals
-      execution_time_ms: executionTimeMs
+      output: (stdoutCollector.data + stderrCollector.data).trim(),
+      executionTimeMs
     };
   } catch (error) {
     const executionTimeMs = Date.now() - startTime;
+    const isTimeout = error.message === 'EXECUTION_TIMEOUT';
+    const message = isTimeout
+      ? `Process killed: execution exceeded ${timeoutSeconds} seconds.`
+      : error.message;
 
-    if (error.message === 'EXECUTION_TIMEOUT') {
-      const timeoutNotice = `Process killed: execution exceeded ${timeout_seconds} seconds.\n`;
-      process.stderr.write(timeoutNotice);
-
-      return {
-        submission_id,
-        room_id,
-        status: 'timeout',
-        exit_code: -1,
-        stdout: '',
-        stderr: timeoutNotice.trim(),
-        output: timeoutNotice.trim(),
-        execution_time_ms: executionTimeMs
-      };
-    }
-
-    process.stderr.write(`Runtime Error: ${error.message}\n`);
     return {
-      submission_id,
-      room_id,
-      status: 'error',
-      exit_code: -1,
+      status: isTimeout ? 'timeout' : 'error',
+      allPassed: false,
+      exitCode: -1,
       stdout: '',
-      stderr: error.message,
-      output: error.message,
-      execution_time_ms: executionTimeMs
+      stderr: message,
+      output: message,
+      executionTimeMs
     };
   } finally {
     if (container) {
