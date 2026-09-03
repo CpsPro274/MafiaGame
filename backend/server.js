@@ -1,653 +1,409 @@
+import path from "path";
+import { fileURLToPath } from "url";
+import dotenv from "dotenv";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, ".env") });
+
 import express from "express";
-import authRouter from "./routes/authRoutes.js";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
-import pg from "pg";
-import dotenv from "dotenv";
-import { WebSocketServer } from "ws";
-import runRoutes from "./routes/runRoutes.js";
-import { setupWSConnection } from "@y/websocket-server/utils";
 
-dotenv.config();
+import { testDbConnection, query } from "./config/db.js";
+import authRoutes from "./routes/authRoutes.js";
+import challengeRoutes from "./routes/challengeRoutes.js";
+import {
+  createRoom,
+  joinRoom,
+  leaveRoom,
+  startGame,
+  getRoom,
+  setRoomDifficulty
+} from "./services/roomManager.js";
+import {
+  saveRoomToDb,
+  savePlayerJoinToDb,
+  updateMatchStartInDb,
+  removePlayerFromDb
+} from "./services/dbRoomService.js";
+import {
+  initTimeline,
+  recordEvent,
+  getReplay
+} from "./services/replayManager.js";
+import { getChallengeByDifficulty } from "./services/challengeService.js";
+import { initScores, awardPoints, getLeaderboard } from "./services/scoreManager.js";
 
-const { Pool } = pg;
 const app = express();
-
-const corsOptions = {
-  origin: (origin, callback) => {
-    callback(null, true);
-  },
-  credentials: true,
-};
-
-app.use(cors(corsOptions));
+app.use(cors());
 app.use(express.json());
 
 const httpServer = createServer(app);
-
 const io = new Server(httpServer, {
-  cors: corsOptions,
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  },
+  transports: ["websocket", "polling"]
 });
 
-const wss = new WebSocketServer({
-  noServer: true,
+// ==========================================
+// REST API ROUTES
+// ==========================================
+app.use("/api/auth", authRoutes);
+app.use("/api/challenges", challengeRoutes);
+
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-wss.on("connection", (conn, req) => {
-  try {
-    const requestUrl = req.url || "/yjs/default-room";
+// Fetch Replay Timeline for a match
+app.get("/api/matches/:roomCode/replay", (req, res) => {
+  const replay = getReplay(req.params.roomCode);
+  res.json(replay);
+});
 
-    const docName =
-      requestUrl.replace(/^\/yjs\/?/, "").split("?")[0] ||
-      "default-room";
-
-    console.log(`[Yjs] Peer connected to doc: ${docName}`);
-
-    setupWSConnection(conn, req, {
-      docName,
-    });
-  } catch (err) {
-    console.error("[Yjs] WebSocket connection error:", err);
-
-    try {
-      conn.close();
-    } catch {}
+// Check if a room exists before joining
+app.get("/api/rooms/:roomCode", (req, res) => {
+  const room = getRoom(req.params.roomCode);
+  if (!room) {
+    return res.status(404).json({ error: "Room not found" });
   }
-});
-
-httpServer.on("upgrade", (request, socket, head) => {
-  const url = request.url || "";
-
-  if (url.startsWith("/yjs")) {
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit("connection", ws, request);
-    });
-  }
-});
-
-const pool = new Pool(
-  process.env.DATABASE_URL
-    ? {
-        connectionString: process.env.DATABASE_URL,
-      }
-    : {
-        user: process.env.DB_USER || process.env.PGUSER || "postgres",
-        host: process.env.DB_HOST || process.env.PGHOST || "localhost",
-        database:
-          process.env.DB_NAME ||
-          process.env.PGDATABASE ||
-          "mafiagame",
-        password: String(
-          process.env.DB_PASSWORD ||
-            process.env.PGPASSWORD ||
-            ""
-        ),
-        port:
-          Number(
-            process.env.DB_PORT || process.env.PGPORT
-          ) || 5432,
-      }
-);
-
-pool
-  .connect()
-  .then((client) => {
-    console.log("Connected to PostgreSQL database");
-    client.release();
-  })
-  .catch((err) => {
-    console.error(
-      "Error connecting to PostgreSQL database:",
-      err
-    );
-  });
-
-io.on("connection", (socket) => {
-  console.log(
-    "Client connected via Socket.io:",
-    socket.id
-  );
-
-  socket.on(
-    "game:join",
-    async ({ gameId, playerId }) => {
-      try {
-        if (!gameId || !playerId) {
-          socket.emit("game:error", {
-            message: "Missing gameId or playerId",
-          });
-
-          return;
-        }
-
-        const roomResult = await pool.query(
-          "SELECT * FROM rooms WHERE id = $1",
-          [gameId]
-        );
-
-        if (roomResult.rows.length === 0) {
-          socket.emit("game:error", {
-            message: "Game not found",
-          });
-
-          return;
-        }
-
-        socket.join(`game:${gameId}`);
-
-        const playerResult = await pool.query(
-          `SELECT *
-           FROM room_players
-           WHERE room_id = $1
-           AND user_id = $2`,
-          [gameId, playerId]
-        );
-
-        if (playerResult.rows.length === 0) {
-          await pool.query(
-            `INSERT INTO room_players
-             (room_id, user_id, role, is_alive)
-             VALUES ($1, $2, 'DEVELOPER', true)`,
-            [gameId, playerId]
-          );
-        }
-
-        const playersResult = await pool.query(
-          `SELECT
-             id,
-             user_id,
-             room_id,
-             role,
-             is_alive,
-             joined_at
-           FROM room_players
-           WHERE room_id = $1`,
-          [gameId]
-        );
-
-        io.to(`game:${gameId}`).emit(
-          "player:joined",
-          {
-            playerId,
-            players: playersResult.rows,
-          }
-        );
-
-        console.log(
-          `Player ${playerId} joined game room ${gameId}`
-        );
-      } catch (err) {
-        console.error(
-          "Error occurred while joining game:",
-          err
-        );
-
-        socket.emit("game:error", {
-          message:
-            "An error occurred while joining the game",
-        });
-      }
-    }
-  );
-
-  socket.on(
-    "vote:cast",
-    async ({ gameId, voterId, targetId }) => {
-      try {
-        if (!gameId || !voterId) {
-          socket.emit("game:error", {
-            message: "Missing gameId or voterId",
-          });
-
-          return;
-        }
-
-        const voterResult = await pool.query(
-          `SELECT *
-           FROM room_players
-           WHERE room_id = $1
-           AND user_id = $2
-           AND is_alive = TRUE`,
-          [gameId, voterId]
-        );
-
-        if (voterResult.rows.length === 0) {
-          socket.emit("game:error", {
-            message:
-              "Voter not found or not active in the game",
-          });
-
-          return;
-        }
-
-        await pool.query(
-          `INSERT INTO votes
-           (room_id, voter_id, voted_for_id)
-           VALUES ($1, $2, $3)`,
-          [gameId, voterId, targetId]
-        );
-
-        await pool.query(
-          `INSERT INTO game_logs
-           (room_id, user_id, action_type, details)
-           VALUES ($1, $2, 'VOTE_CAST', $3)`,
-          [
-            gameId,
-            voterId,
-            JSON.stringify({
-              votedFor: targetId || null,
-            }),
-          ]
-        );
-
-        const votesResult = await pool.query(
-          `SELECT
-             voter_id,
-             voted_for_id,
-             created_at
-           FROM votes
-           WHERE room_id = $1
-           ORDER BY created_at ASC`,
-          [gameId]
-        );
-
-        io.to(`game:${gameId}`).emit(
-          "vote:updated",
-          {
-            voterId,
-            targetId,
-            votes: votesResult.rows,
-          }
-        );
-      } catch (err) {
-        console.error(
-          "Error occurred while casting vote:",
-          err
-        );
-
-        socket.emit("vote:error", {
-          message:
-            "An error occurred while casting the vote",
-        });
-      }
-    }
-  );
-
-  socket.on(
-    "code:update",
-    async ({ gameId, playerId, code }) => {
-      try {
-        if (!gameId || !playerId) {
-          return;
-        }
-
-        await pool.query(
-          `INSERT INTO game_logs
-           (room_id, user_id, action_type, details)
-           VALUES ($1, $2, 'CODE_EDIT', $3)`,
-          [gameId, playerId, code || ""]
-        );
-
-        socket
-          .to(`game:${gameId}`)
-          .emit("code:updated", {
-            playerId,
-            code,
-          });
-      } catch (err) {
-        console.error(
-          "Error occurred while updating code:",
-          err
-        );
-
-        socket.emit("game:error", {
-          message:
-            "An error occurred while updating the code",
-        });
-      }
-    }
-  );
-
-  socket.on(
-    "code:run",
-    async ({ gameId, playerId, code }) => {
-      try {
-        if (!gameId || !playerId) {
-          return;
-        }
-
-        await pool.query(
-          `INSERT INTO game_logs
-           (room_id, user_id, action_type, details)
-           VALUES ($1, $2, 'RUN_TEST', $3)`,
-          [gameId, playerId, code || ""]
-        );
-
-        io.to(`game:${gameId}`).emit(
-          "code:test:started",
-          {
-            playerId,
-          }
-        );
-      } catch (err) {
-        console.error(
-          "Error occurred while running code:",
-          err
-        );
-
-        socket.emit("code:error", {
-          message:
-            "An error occurred while running the code",
-        });
-      }
-    }
-  );
-
-  socket.on("disconnect", () => {
-    console.log(
-      "Client disconnected:",
-      socket.id
-    );
-  });
-});
-
-app.get("/", (req, res) => {
   res.json({
-    message: "Code Mafia Game Server is running",
+    roomCode: room.roomCode,
+    status: room.status,
+    difficulty: room.difficulty || "MEDIUM",
+    playerCount: room.players.length,
+    maxPlayers: room.maxPlayers
   });
 });
 
-app.get("/health", async (req, res) => {
-  try {
-    await pool.query("SELECT 1");
+// ==========================================
+// REAL-TIME SOCKET.IO ROOM & GAMEPLAY EVENTS
+// ==========================================
+io.on("connection", (socket) => {
+  console.log(`[Socket Connected] ID: ${socket.id}`);
 
-    res.json({
-      status: "ok",
-      database: "connected",
-    });
-  } catch (err) {
-    console.error(
-      "Health check error:",
-      err
-    );
+  // 1. CREATE ROOM (with Difficulty Support)
+  socket.on("room:create", async ({ username, difficulty = "MEDIUM" }, callback) => {
+    try {
+      if (!username || !username.trim()) {
+        return callback?.({ success: false, error: "Username is required." });
+      }
 
-    res.status(500).json({
-      status: "error",
-      database: "disconnected",
+      const { room, player } = createRoom(socket.id, username, difficulty);
+      socket.join(room.roomCode);
+
+      console.log(`[Room Created] Code: ${room.roomCode} (${room.difficulty}) by ${username}`);
+
+      callback?.({
+        success: true,
+        roomCode: room.roomCode,
+        room,
+        player
+      });
+
+      saveRoomToDb(room.roomCode, username).catch(() => {});
+    } catch (err) {
+      console.error("Create Room Error:", err);
+      callback?.({ success: false, error: err.message });
+    }
+  });
+
+  // 2. SET DIFFICULTY IN LOBBY
+  socket.on("room:set_difficulty", ({ roomCode, difficulty }) => {
+    const updatedRoom = setRoomDifficulty(roomCode, difficulty);
+    if (updatedRoom) {
+      io.to(roomCode).emit("room:difficulty_updated", { difficulty: updatedRoom.difficulty, room: updatedRoom });
+    }
+  });
+
+  // 3. JOIN ROOM
+  socket.on("room:join", async ({ roomCode, username }, callback) => {
+    try {
+      if (!roomCode || !username) {
+        return callback?.({ success: false, error: "Room code and username are required." });
+      }
+
+      const result = joinRoom(roomCode, socket.id, username);
+
+      if (result.error) {
+        return callback?.({ success: false, error: result.error });
+      }
+
+      const { room, player } = result;
+      socket.join(room.roomCode);
+
+      console.log(`[Player Joined] ${username} joined Room: ${room.roomCode}`);
+
+      callback?.({
+        success: true,
+        roomCode: room.roomCode,
+        room,
+        player
+      });
+
+      socket.to(room.roomCode).emit("room:player_joined", {
+        player,
+        room
+      });
+
+      savePlayerJoinToDb(room.roomCode, username).catch(() => {});
+    } catch (err) {
+      console.error("Join Room Error:", err);
+      callback?.({ success: false, error: err.message });
+    }
+  });
+
+  // 4. START MATCH & LOAD CHALLENGE BY DIFFICULTY
+  socket.on("game:start", async ({ roomCode }, callback) => {
+    try {
+      const result = startGame(roomCode, socket.id);
+      if (result.error) {
+        return callback?.({ success: false, error: result.error });
+      }
+
+      const { room } = result;
+
+      // Load curated challenge based on selected difficulty (EASY, MEDIUM, HARD)
+      const challengeData = getChallengeByDifficulty(room.difficulty || "MEDIUM");
+
+      // Initialize Replay Timeline & Points Manager
+      initTimeline(room.roomCode, challengeData.buggy_code, room.players);
+      initScores(room.roomCode, room.players);
+
+      console.log(`[Match Started] Room: ${room.roomCode} (${room.difficulty}) with ${room.players.length} players`);
+
+      // Emit secret role individually
+      room.players.forEach((p) => {
+        io.to(p.socketId).emit("game:started", {
+          roomCode: room.roomCode,
+          role: p.role,
+          room: {
+            ...room,
+            players: room.players.map((other) => ({
+              ...other,
+              role: other.socketId === p.socketId ? other.role : "???"
+            }))
+          },
+          challenge: challengeData,
+          leaderboard: getLeaderboard(room.roomCode)
+        });
+      });
+
+      callback?.({ success: true });
+      updateMatchStartInDb(room.roomCode, room.players).catch(() => {});
+    } catch (err) {
+      console.error("Start Game Error:", err);
+      callback?.({ success: false, error: err.message });
+    }
+  });
+
+  // 5. CODE EDIT IN COLLABORATIVE BUFFER
+  socket.on("code:edit", ({ roomCode, author, authorRole, code, details, activeLines }) => {
+    recordEvent(roomCode, {
+      author,
+      authorRole,
+      action: authorRole === "MAFIA" ? "SABOTAGE" : "CODE_EDIT",
+      details,
+      code,
+      activeLines
     });
+    socket.to(roomCode).emit("code:updated", { code, author, activeLines });
+  });
+
+  // 6. TEST RUN EXECUTION & XP AWARDING
+  socket.on("test:run", ({ roomCode, author, authorRole, passed, details, code }) => {
+    recordEvent(roomCode, {
+      author,
+      authorRole,
+      action: passed ? "TEST_PASS" : "TEST_FAIL",
+      details: details || (passed ? "All tests passed!" : "Tests failed."),
+      code
+    });
+
+    // Award +150 XP if developer passes tests
+    if (passed && authorRole === "DEVELOPER") {
+      const scoreRes = awardPoints(roomCode, author, 150, "TEST_PASS");
+      if (scoreRes) {
+        io.to(roomCode).emit("score:updated", {
+          awardedTo: author,
+          points: 150,
+          reason: "Fixed unit test suite! (+150 XP)",
+          leaderboard: scoreRes.allScores
+        });
+      }
+    }
+
+    io.to(roomCode).emit("test:result", { passed, details, author });
+  });
+
+  // 7. TACTICAL SABOTAGE ABILITIES & XP
+  socket.on("sabotage:trigger", ({ roomCode, ability, senderName, senderRole, targetLines }) => {
+    console.log(`💣 [Sabotage Triggered] Ability: ${ability} by ${senderName} (${senderRole}) in Room: ${roomCode}`);
+
+    recordEvent(roomCode, {
+      author: senderName,
+      authorRole: senderRole,
+      action: "SABOTAGE",
+      details: `⚡ Tactical Ability Activated: ${ability}`,
+      activeLines: targetLines || []
+    });
+
+    // Award Mafia +200 XP for executing a tactical sabotage
+    if (senderRole === "MAFIA") {
+      const scoreRes = awardPoints(roomCode, senderName, 200, "SABOTAGE");
+      if (scoreRes) {
+        io.to(roomCode).emit("score:updated", {
+          awardedTo: senderName,
+          points: 200,
+          reason: `Executed ${ability} Sabotage! (+200 XP)`,
+          leaderboard: scoreRes.allScores
+        });
+      }
+    }
+
+    // Broadcast effect
+    if (ability === "SCREEN_GLITCH") {
+      socket.to(roomCode).emit("sabotage:effect", {
+        type: "SCREEN_GLITCH",
+        durationSec: 6,
+        message: "⚠️ CRITICAL SYSTEM GLITCH: Matrix interference detected!"
+      });
+    } else if (ability === "FALSE_GREEN") {
+      socket.to(roomCode).emit("sabotage:effect", {
+        type: "FALSE_GREEN",
+        durationSec: 15,
+        message: "🟢 ALL 3 UNIT TESTS PASSED (Simulated Verification)"
+      });
+    } else if (ability === "FUNCTION_LOCK") {
+      io.to(roomCode).emit("sabotage:effect", {
+        type: "FUNCTION_LOCK",
+        durationSec: 10,
+        lockedLines: targetLines || [4, 5, 6, 7, 8],
+        message: "🔒 FUNCTION LOCKED: Lines 4-8 temporarily frozen for 10 seconds!"
+      });
+    } else if (ability === "CODE_RADAR") {
+      socket.emit("sabotage:effect", {
+        type: "CODE_RADAR",
+        durationSec: 8,
+        message: "🔍 CODE RADAR SCAN: Thermal heat trail revealed recent edits!"
+      });
+    }
+  });
+
+  // Map to track emergency meetings used per room (Key: roomCode, Value: Set of usernames)
+  const roomMeetings = new Map();
+
+  // 8. EMERGENCY MEETING & ELIMINATION VOTING
+  socket.on("meeting:call", ({ roomCode, callerName }) => {
+    const norm = roomCode?.trim().toUpperCase();
+    if (!roomMeetings.has(norm)) {
+      roomMeetings.set(norm, new Set());
+    }
+
+    const usedSet = roomMeetings.get(norm);
+    if (usedSet.has(callerName)) {
+      socket.emit("sabotage:effect", {
+        type: "MEETING_BLOCKED",
+        durationSec: 3,
+        message: "⚠️ Emergency meeting quota spent! (Max 1 per operative per match)"
+      });
+      return;
+    }
+
+    usedSet.add(callerName);
+    console.log(`🚨 [Emergency Meeting] Called by ${callerName} in Room ${norm}`);
+
+    recordEvent(norm, {
+      author: callerName,
+      authorRole: "DEVELOPER",
+      action: "MEETING",
+      details: `🚨 ${callerName} sounded the Emergency Alarm! Voting tribunal opened.`
+    });
+
+    io.to(norm).emit("meeting:started", {
+      callerName,
+      meetingDurationSec: 45
+    });
+  });
+
+  socket.on("meeting:vote", ({ roomCode, voterName, targetUsername }) => {
+    const norm = roomCode?.trim().toUpperCase();
+    io.to(norm).emit("meeting:vote_cast", {
+      voterName,
+      targetUsername
+    });
+  });
+
+  socket.on("meeting:finish", ({ roomCode, ejectedPlayer, wasMafia, votersWhoVotedCorrectly = [] }) => {
+    const norm = roomCode?.trim().toUpperCase();
+
+    // Award +300 XP to detectives who voted correctly
+    if (wasMafia && votersWhoVotedCorrectly.length > 0) {
+      votersWhoVotedCorrectly.forEach((voter) => {
+        awardPoints(norm, voter, 300, "VOTE_CORRECT");
+      });
+    }
+
+    io.to(norm).emit("meeting:ejected", {
+      ejectedPlayer,
+      wasMafia,
+      leaderboard: getLeaderboard(norm)
+    });
+  });
+
+  // 9. FINISH MATCH
+  socket.on("game:finish", ({ roomCode, winnerTeam, endReason }) => {
+    const replay = getReplay(roomCode);
+    const leaderboard = getLeaderboard(roomCode);
+
+    io.to(roomCode).emit("game:finished", {
+      winnerTeam, // 'DEVELOPERS' | 'MAFIA'
+      endReason,
+      replay,
+      leaderboard
+    });
+  });
+
+  // 10. LEAVE ROOM
+  socket.on("room:leave", async (callback) => {
+    await handlePlayerLeave(socket);
+    callback?.({ success: true });
+  });
+
+  // 11. DISCONNECT
+  socket.on("disconnect", async () => {
+    await handlePlayerLeave(socket);
+  });
+
+  async function handlePlayerLeave(socketInstance) {
+    const result = leaveRoom(socketInstance.id);
+    if (!result) return;
+
+    const { roomCode, room, leftPlayer, roomDeleted } = result;
+    socketInstance.leave(roomCode);
+
+    if (leftPlayer?.username) {
+      removePlayerFromDb(roomCode, leftPlayer.username).catch(() => {});
+    }
+
+    if (roomDeleted) {
+      console.log(`[Room Closed] Room ${roomCode} was deleted.`);
+    } else {
+      console.log(`[Player Left] ${leftPlayer?.username} left Room: ${roomCode}`);
+      io.to(roomCode).emit("room:player_left", {
+        leftPlayer,
+        room
+      });
+    }
   }
 });
 
-app.get(
-  "/api/rooms/:roomCode",
-  async (req, res) => {
-    try {
-      const { roomCode } = req.params;
+const PORT = process.env.PORT || 5000;
 
-      const query = `
-        SELECT
-          r.id,
-          r.room_code AS "roomCode",
-          r.status,
-          r.host_id AS "hostId",
-          r.winner_team AS "winnerTeam",
-          r.created_at AS "createdAt",
-          c.id AS "challengeId",
-          c.title AS "challengeTitle",
-          c.description AS "challengeDescription",
-          c.language AS "challengeLanguage",
-          (
-            SELECT COUNT(*)::int
-            FROM room_players rp
-            WHERE rp.room_id = r.id
-          ) AS "playerCount"
-        FROM rooms r
-        LEFT JOIN challenges c
-          ON r.challenge_id = c.id
-        WHERE r.room_code = $1;
-      `;
-
-      const { rows } = await pool.query(
-        query,
-        [roomCode]
-      );
-
-      if (rows.length === 0) {
-        return res.status(404).json({
-          error: `Room with code '${roomCode}' not found`,
-        });
-      }
-
-      const row = rows[0];
-
-      return res.json({
-        room: {
-          id: row.id,
-          roomCode: row.roomCode,
-          status: row.status,
-          hostId: row.hostId,
-          winnerTeam: row.winnerTeam,
-          createdAt: row.createdAt,
-          playerCount: row.playerCount,
-          challenge: row.challengeId
-            ? {
-                id: row.challengeId,
-                title: row.challengeTitle,
-                description:
-                  row.challengeDescription,
-                language: row.challengeLanguage,
-              }
-            : null,
-        },
-      });
-    } catch (err) {
-      console.error(
-        "Error fetching room by code:",
-        err
-      );
-
-      return res.status(500).json({
-        error: "Internal server error",
-      });
-    }
-  }
-);
-
-app.get(
-  "/api/rooms/:roomId/players",
-  async (req, res) => {
-    try {
-      const { roomId } = req.params;
-
-      const requestingUserId = req.query.userId
-        ? Number(req.query.userId)
-        : null;
-
-      const query = `
-        SELECT
-          rp.user_id AS "userId",
-          u.username,
-          rp.is_alive AS "isAlive",
-          rp.role,
-          (r.host_id = rp.user_id) AS "isHost"
-        FROM room_players rp
-        JOIN users u
-          ON rp.user_id = u.id
-        JOIN rooms r
-          ON rp.room_id = r.id
-        WHERE rp.room_id = $1
-        ORDER BY rp.joined_at ASC;
-      `;
-
-      const { rows } = await pool.query(
-        query,
-        [roomId]
-      );
-
-      const players = rows.map((p) => {
-        const isSelf =
-          requestingUserId &&
-          requestingUserId === p.userId;
-
-        return {
-          userId: p.userId,
-          username: p.username,
-          isAlive: p.isAlive,
-          isHost: p.isHost,
-          role: isSelf ? p.role : null,
-        };
-      });
-
-      return res.json({
-        players,
-      });
-    } catch (err) {
-      console.error(
-        "Error fetching room players:",
-        err
-      );
-
-      return res.status(500).json({
-        error: "Internal server error",
-      });
-    }
-  }
-);
-
-app.get(
-  "/api/challenges",
-  async (req, res) => {
-    try {
-      const query = `
-        SELECT
-          id,
-          title,
-          description,
-          language,
-          jsonb_array_length(test_cases) AS "totalTests"
-        FROM challenges
-        ORDER BY id ASC;
-      `;
-
-      const { rows } = await pool.query(query);
-
-      return res.json({
-        challenges: rows.map((r) => ({
-          id: r.id,
-          title: r.title,
-          description: r.description,
-          language: r.language,
-          totalTests: r.totalTests || 0,
-        })),
-      });
-    } catch (err) {
-      console.error(
-        "Error fetching challenges:",
-        err
-      );
-
-      return res.status(500).json({
-        error: "Internal server error",
-      });
-    }
-  }
-);
-
-app.get(
-  "/api/challenges/:id",
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-
-      const query = `
-        SELECT
-          id,
-          title,
-          description,
-          language,
-          buggy_code AS "buggyCode",
-          test_cases AS "testCases"
-        FROM challenges
-        WHERE id = $1;
-      `;
-
-      const { rows } = await pool.query(
-        query,
-        [id]
-      );
-
-      if (rows.length === 0) {
-        return res.status(404).json({
-          error: `Challenge with ID ${id} not found`,
-        });
-      }
-
-      const ch = rows[0];
-
-      const testCases = Array.isArray(
-        ch.testCases
-      )
-        ? ch.testCases
-        : [];
-
-      const publicTestCases = testCases
-        .filter((tc) => !tc.hidden)
-        .map((tc) => ({
-          input: tc.input,
-          expected: tc.expected,
-        }));
-
-      return res.json({
-        challenge: {
-          id: ch.id,
-          title: ch.title,
-          description: ch.description,
-          language: ch.language,
-          buggyCode: ch.buggyCode,
-          publicTestCases,
-          hiddenTestCount:
-            testCases.filter(
-              (tc) => tc.hidden
-            ).length,
-        },
-      });
-    } catch (err) {
-      console.error(
-        "Error fetching challenge by ID:",
-        err
-      );
-
-      return res.status(500).json({
-        error: "Internal server error",
-      });
-    }
-  }
-);
-
-app.use(
-  "/api/auth",
-  authRouter
-);
-
-app.use(
-  "/api",
-  runRoutes
-);
-
-const PORT =
-  process.env.PORT || 5000;
-
-httpServer.listen(
-  PORT,
-  "0.0.0.0",
-  () => {
-    console.log(
-      `Backend server active on all interfaces at http://0.0.0.0:${PORT}`
-    );
-
-    console.log(
-      `Yjs WebSocket endpoint available at ws://localhost:${PORT}/yjs/<room>`
-    );
-  }
-);
+httpServer.listen(PORT, "0.0.0.0", async () => {
+  console.log(`🚀 Code Mafia Backend running on http://0.0.0.0:${PORT}`);
+  await testDbConnection();
+});

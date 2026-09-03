@@ -1,24 +1,55 @@
-import pkg from 'pg';
-import dotenv from 'dotenv';
+import pg from "pg";
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 
-dotenv.config();
-const { Pool } = pkg;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
-const pool = new Pool({
-  user: process.env.DB_USER || process.env.PGUSER || 'postgres',
-  host: process.env.DB_HOST || process.env.PGHOST || 'localhost',
-  database: process.env.DB_NAME || process.env.PGDATABASE || 'mafiagame',
-  password: String(process.env.DB_PASSWORD || process.env.PGPASSWORD || ''),
-  port: Number(process.env.DB_PORT || process.env.PGPORT) || 5432,
+const { Pool } = pg;
+
+const dbPassword = process.env.DB_PASSWORD || "password";
+const dbUser = process.env.DB_USER || "postgres";
+const dbHost = process.env.DB_HOST || "127.0.0.1";
+const dbPort = parseInt(process.env.DB_PORT || "5432", 10);
+const dbName = process.env.DB_NAME || "MafiaGame";
+
+// Connection pool configuration
+export const pool = new Pool({
+  user: dbUser,
+  host: dbHost,
+  database: dbName,
+  password: String(dbPassword),
+  port: dbPort,
 });
 
-pool.on('connect', () => {
-  console.log('PostgreSQL Connected');
-});
-
-pool.on('error', (err) => {
-  console.error('PostgreSQL client error:', err.message);
-});
-
+// Helper for executing queries
 export const query = (text, params) => pool.query(text, params);
-export default pool;
+
+// Test database connection
+export async function testDbConnection() {
+  try {
+    const res = await pool.query("SELECT current_database(), NOW()");
+    console.log(`✅ PostgreSQL Connected to database: "${res.rows[0].current_database}"`);
+    return true;
+  } catch (err) {
+    // If exact name failed, check with lowercase
+    if (err.message.includes("does not exist") || err.message.includes("database")) {
+      try {
+        const fallbackPool = new Pool({
+          user: dbUser,
+          host: dbHost,
+          database: dbName.toLowerCase(),
+          password: String(dbPassword),
+          port: dbPort,
+        });
+        const res2 = await fallbackPool.query("SELECT current_database(), NOW()");
+        console.log(`✅ PostgreSQL Connected to database: "${res2.rows[0].current_database}"`);
+        return true;
+      } catch (_) {}
+    }
+    console.error(`❌ PostgreSQL Connection Failed: ${err.message}`);
+    console.error(`👉 Using credentials: user=${dbUser}, host=${dbHost}, port=${dbPort}, database=${dbName}`);
+    return false;
+  }
+}
