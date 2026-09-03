@@ -38,7 +38,6 @@ pool.connect()
 
 io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
-
   socket.on("game:join", async ({ gameId, playerId }) => {
     try{
       if(!gameId || !playerId){
