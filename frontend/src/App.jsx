@@ -19,7 +19,7 @@ function App() {
         <Route path="/home" element={<Home />}/>
         <Route path="/dashboard" element={<Dashboard />}/>
         <Route path="/onboarding" element={<Onboarding />}/>
-        <Route path="/editor" element={<Editor />}/>
+        <Route path="/editor/:gameId" element={<Editor />}/>
       </Routes>
     </BrowserRouter>
   );
