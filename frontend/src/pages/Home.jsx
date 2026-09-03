@@ -73,11 +73,6 @@ export default function Home() {
 
       <main className={styles.main}>
         <section className={styles.hero}>
-          <div className={styles.badge}>
-            <span className={styles.badgeDot}></span>
-            REAL-TIME MULTIPLAYER DEBUGGING
-          </div>
-
           <h1 className={styles.title}>
             Code together.
             <br />
@@ -109,13 +104,6 @@ export default function Home() {
               <Users size={18} />
               Join a Game
             </button>
-          </div>
-
-          <div className={styles.heroHint}>
-            <span>Debug.</span>
-            <span>Collaborate.</span>
-            <span>Investigate.</span>
-            <span>Survive.</span>
           </div>
         </section>
 
@@ -289,15 +277,9 @@ export default function Home() {
               tests passing, and identify the players who are deliberately
               sabotaging your progress.
             </p>
-
-            <div className={styles.rolePoints}>
-              <span>✓ Fix bugs</span>
-              <span>✓ Pass tests</span>
-              <span>✓ Investigate players</span>
-            </div>
           </div>
 
-          <div className={`${styles.roleCard} ${styles.mafiaCard}`}>
+          <div className={`${styles.roleCard}`}>
             <div className={styles.roleIcon}>
               <Eye size={28} />
             </div>
@@ -317,20 +299,10 @@ export default function Home() {
               regressions, preserving existing issues, and misleading your
               fellow developers.
             </p>
-
-            <div className={styles.rolePoints}>
-              <span>✓ Introduce regressions</span>
-              <span>✓ Mislead the team</span>
-              <span>✓ Survive the vote</span>
-            </div>
           </div>
         </section>
 
         <section className={styles.cta}>
-          <span className={styles.sectionLabel}>
-            READY?
-          </span>
-
           <h2 className={styles.ctaTitle}>
             Your code is broken.
             <br />

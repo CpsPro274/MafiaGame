@@ -3,9 +3,9 @@
   flex-direction: column;
   height: 100vh;
   width: 100vw;
-  background-color: #1a1a1a;
-  color: #e5e7eb;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: 'Inter', system-ui, sans-serif;
   overflow: hidden;
 }
 
@@ -15,12 +15,12 @@
   justify-content: space-between;
   height: 48px;
   padding: 0 16px;
-  background-color: #262626;
-  border-bottom: 1px solid #333333;
+  background-color: hsl(var(--background));
+  border-bottom: 1px solid hsl(var(--border));
   user-select: none;
 }
 
-.leftControls {
+.leftControls, .rightControls {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -30,55 +30,42 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 700;
+  font-weight: 600;
   font-size: 0.95rem;
-  color: #ffa116; /* LeetCode orange accent */
+  color: hsl(var(--foreground));
 }
 
 .langSelect {
-  background-color: #333333;
-  color: #eff1f6;
-  border: 1px solid #4a4a4a;
-  border-radius: 6px;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
   padding: 4px 10px;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   outline: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease;
 }
 
 .langSelect:hover {
-  background-color: #3e3e3e;
+  background-color: hsl(var(--muted));
 }
 
-.rightControls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-/* LeetCode Style Timer */
 .timerBadge {
   display: flex;
   align-items: center;
   gap: 8px;
-  background-color: #333333;
-  border: 1px solid #424242;
-  border-radius: 6px;
+  background-color: hsl(var(--muted));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
   padding: 4px 10px;
-  font-size: 0.88rem;
-  color: #eff1f6;
-  transition: border-color 0.2s ease;
-}
-
-.timerBadge:hover {
-  border-color: #606060;
+  font-size: 0.875rem;
+  color: hsl(var(--foreground));
 }
 
 .timerDisplay {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-weight: 500;
   min-width: 66px;
   text-align: center;
 }
@@ -86,9 +73,9 @@
 .iconBtn {
   background: transparent;
   border: none;
-  color: #9ca3af;
-  padding: 2px;
-  border-radius: 4px;
+  color: hsl(var(--muted-foreground));
+  padding: 4px;
+  border-radius: calc(var(--radius) - 2px);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -97,54 +84,52 @@
 }
 
 .iconBtn:hover {
-  color: #ffffff;
-  background-color: #4a4a4a;
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted));
 }
 
 .divider {
   width: 1px;
   height: 20px;
-  background-color: #424242;
+  background-color: hsl(var(--border));
 }
 
-/* Action Buttons */
 .runBtn {
   display: flex;
   align-items: center;
   gap: 6px;
-  background-color: #333333;
-  color: #e5e7eb;
-  border: 1px solid #4a4a4a;
+  background-color: transparent;
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
   padding: 5px 12px;
-  border-radius: 6px;
-  font-size: 0.82rem;
+  border-radius: var(--radius);
+  font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease;
 }
 
 .runBtn:hover {
-  background-color: #424242;
-  color: #fff;
+  background-color: hsl(var(--muted));
 }
 
 .submitBtn {
   display: flex;
   align-items: center;
   gap: 6px;
-  background-color: #2cbb5d;
-  color: #ffffff;
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
   border: none;
   padding: 5px 14px;
-  border-radius: 6px;
-  font-size: 0.82rem;
-  font-weight: 600;
+  border-radius: var(--radius);
+  font-size: 0.875rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: opacity 0.15s ease;
 }
 
 .submitBtn:hover {
-  background-color: #27a854;
+  opacity: 0.9;
 }
 
 .editorArea {
@@ -152,19 +137,19 @@
   position: relative;
   width: 100%;
   height: calc(100vh - 80px);
-  background-color: #1e1e1e;
+  background-color: hsl(var(--background));
 }
 
 .statusBar {
   height: 32px;
-  background-color: #1a1a1a;
-  border-top: 1px solid #2e2e2e;
+  background-color: hsl(var(--background));
+  border-top: 1px solid hsl(var(--border));
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  font-size: 0.78rem;
-  color: #8c8c8c;
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
 }
 
 .statusIndicator {
@@ -174,15 +159,15 @@
 }
 
 .dotConnected {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background-color: #2cbb5d;
+  background-color: hsl(var(--primary));
 }
 
 .dotDisconnected {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background-color: #ef4444;
+  background-color: hsl(var(--muted-foreground));
 }
