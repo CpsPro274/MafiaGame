@@ -1,45 +1,36 @@
-# Code Mafia: Database Setup & Migration Guide
+# Code Mafia: Simple Database Guide
 
-This directory contains the database definition for **Code Mafia: Multiplayer Collaborative Debugging Challenge**.
-
----
-
-## Files Overview
-
-1. [`schema.sql`](./schema.sql): Raw PostgreSQL DDL with tables, indexes, UUIDs, foreign keys, and trigger functions.
-2. [`seed.sql`](./seed.sql): Starter test users and an intentionally buggy coding challenge with public & hidden test cases.
-3. [`../prisma/schema.prisma`](../prisma/schema.prisma): Complete Prisma ORM schema for Node.js / TypeScript backends.
+Database ko 2 alag-alag aur simple files me divide kar diya gaya hai:
 
 ---
 
-## How to Apply the Schema
+## 📁 Files
 
-### Option A: Using Raw PostgreSQL (psql / Docker)
+1. **[`auth_schema.sql`](./auth_schema.sql)** 👉 **Login & User Auth**
+   * Sirf `users` table (ID, username, email, password, wins).
 
-1. **Start PostgreSQL** (or use your existing instance):
-   ```bash
-   # Example with Docker
-   docker run --name mafia-postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=codemafia -p 5432:5432 -d postgres:16-alpine
-   ```
+2. **[`game_schema.sql`](./game_schema.sql)** 👉 **Game Logic**
+   * `challenges` (Buggy code + solutions + test cases)
+   * `rooms` (Game lobbies & room codes)
+   * `room_players` (Secret Developer / Mafia roles)
+   * `votes` (Emergency meeting voting)
+   * `game_logs` (Post-match replay timeline)
 
-2. **Execute Schema & Seed**:
-   ```bash
-   psql -U postgres -d codemafia -f backend/database/schema.sql
-   psql -U postgres -d codemafia -f backend/database/seed.sql
-   ```
+3. **[`seed.sql`](./seed.sql)** 👉 **Sample Test Data**
+   * 2 sample users (`alex_dev`, `sam_mafia`)
+   * 1 ready-to-test buggy JavaScript challenge with test cases.
 
 ---
 
-### Option B: Using Prisma ORM (Recommended for Node.js backend)
+## 🚀 How to Run in PostgreSQL
 
-1. Set your `DATABASE_URL` in `backend/.env`:
-   ```env
-   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/codemafia?schema=public"
-   ```
+```bash
+# 1. Login & Auth table banayein
+psql -U postgres -d codemafia -f backend/database/auth_schema.sql
 
-2. Run Prisma migration:
-   ```bash
-   cd backend
-   npx prisma migrate dev --name init
-   npx prisma generate
-   ```
+# 2. Game logic tables banayein
+psql -U postgres -d codemafia -f backend/database/game_schema.sql
+
+# 3. Sample data load karein
+psql -U postgres -d codemafia -f backend/database/seed.sql
+```
