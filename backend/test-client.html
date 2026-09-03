@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Code Mafia: Socket.IO & API Tester</title>
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      padding: 24px;
+      margin: 0;
+    }
+    h1 { color: #38bdf8; }
+    .card {
+      background: #1e293b;
+      padding: 20px;
+      border-radius: 12px;
+      border: 1px solid #334155;
+      margin-bottom: 20px;
+      max-width: 600px;
+    }
+    input, button {
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 14px;
+      margin: 4px;
+    }
+    input {
+      background: #0f172a;
+      border: 1px solid #475569;
+      color: white;
+    }
+    button {
+      background: #38bdf8;
+      color: #0f172a;
+      font-weight: bold;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover { background: #7dd3fc; }
+    .log-box {
+      background: #020617;
+      border: 1px solid #1e293b;
+      padding: 12px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 13px;
+      height: 220px;
+      overflow-y: auto;
+      color: #4ade80;
+    }
+  </style>
+</head>
+<body>
+  <h1>🕵️ Code Mafia: Backend Tester</h1>
+  
+  <!-- 1. Room Creation / Joining -->
+  <div class="card">
+    <h3>1. Real-Time Room (Socket.IO)</h3>
+    <p>Status: <span id="socket-status" style="color: #facc15;">Connecting...</span></p>
+    <div>
+      <input id="username-input" type="text" placeholder="Enter Username (e.g. Alex)" value="Alex" />
+      <button onclick="handleCreateRoom()">Create Room</button>
+    </div>
+    <div style="margin-top: 10px;">
+      <input id="roomcode-input" type="text" placeholder="Enter 6-char Room Code" />
+      <button onclick="handleJoinRoom()">Join Room</button>
+      <button onclick="handleLeaveRoom()" style="background: #f87171;">Leave Room</button>
+    </div>
+  </div>
+
+  <!-- 2. REST API Testing -->
+  <div class="card">
+    <h3>2. Test PostgreSQL API Endpoints</h3>
+    <button onclick="testRegister()">Register User</button>
+    <button onclick="testLogin()">Login User</button>
+    <button onclick="fetchChallenges()">Fetch Challenges</button>
+  </div>
+
+  <!-- 3. Logs Console -->
+  <div class="card">
+    <h3>3. Live Server Output & Events</h3>
+    <div id="logs" class="log-box"></div>
+  </div>
+
+  <script>
+    const socket = io("http://localhost:5000");
+    const logsEl = document.getElementById("logs");
+    const statusEl = document.getElementById("socket-status");
+
+    function log(msg) {
+      const time = new Date().toLocaleTimeString();
+      logsEl.innerHTML += `[${time}] ${msg}<br/>`;
+      logsEl.scrollTop = logsEl.scrollHeight;
+    }
+
+    socket.on("connect", () => {
+      statusEl.innerText = "Connected (Socket ID: " + socket.id + ")";
+      statusEl.style.color = "#4ade80";
+      log("✅ Connected to Socket.IO Server!");
+    });
+
+    socket.on("disconnect", () => {
+      statusEl.innerText = "Disconnected";
+      statusEl.style.color = "#f87171";
+      log("❌ Disconnected from server.");
+    });
+
+    socket.on("room:player_joined", (data) => {
+      log(`👋 <b>${data.player.username}</b> joined your room! (Total players: ${data.room.players.length})`);
+    });
+
+    socket.on("room:player_left", (data) => {
+      log(`🚪 <b>${data.leftPlayer.username}</b> left the room.`);
+    });
+
+    function handleCreateRoom() {
+      const username = document.getElementById("username-input").value;
+      socket.emit("room:create", { username }, (res) => {
+        if (res.success) {
+          log(`🎉 Room Created! Code: <b style="color:#38bdf8">${res.roomCode}</b>`);
+          document.getElementById("roomcode-input").value = res.roomCode;
+        } else {
+          log(`❌ Create Room Error: ${res.error}`);
+        }
+      });
+    }
+
+    function handleJoinRoom() {
+      const username = document.getElementById("username-input").value;
+      const roomCode = document.getElementById("roomcode-input").value;
+      socket.emit("room:join", { roomCode, username }, (res) => {
+        if (res.success) {
+          log(`✅ Successfully joined room: <b>${res.roomCode}</b>`);
+        } else {
+          log(`❌ Join Room Error: ${res.error}`);
+        }
+      });
+    }
+
+    function handleLeaveRoom() {
+      socket.emit("room:leave", () => {
+        log("🚪 Left the room.");
+      });
+    }
+
+    async function testRegister() {
+      const username = "test_player_" + Math.floor(Math.random() * 1000);
+      try {
+        const res = await fetch("http://localhost:5000/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password: "password123" })
+        });
+        const data = await res.json();
+        log(`API Register Response: ${JSON.stringify(data)}`);
+      } catch (err) {
+        log(`❌ Register error: ${err.message}`);
+      }
+    }
+
+    async function testLogin() {
+      try {
+        const res = await fetch("http://localhost:5000/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: "alex_dev", password: "password123" })
+        });
+        const data = await res.json();
+        log(`API Login Response: ${JSON.stringify(data)}`);
+      } catch (err) {
+        log(`❌ Login error: ${err.message}`);
+      }
+    }
+
+    async function fetchChallenges() {
+      try {
+        const res = await fetch("http://localhost:5000/api/challenges");
+        const data = await res.json();
+        log(`API Challenges: ${JSON.stringify(data)}`);
+      } catch (err) {
+        log(`❌ Fetch challenges error: ${err.message}`);
+      }
+    }
+  </script>
+</body>
+</html>
