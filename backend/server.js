@@ -23,9 +23,17 @@ const io = new Server(httpServer, {
    }
 });
 
-const pool = new Pool({
-  connectionString:process.env.DATABASE_URL
-});
+const pool = new Pool(
+  process.env.DATABASE_URL
+    ? { connectionString: process.env.DATABASE_URL }
+    : {
+        user: process.env.DB_USER || "postgres",
+        host: process.env.DB_HOST || "localhost",
+        database: process.env.DB_NAME || "mafiagame",
+        password: process.env.DB_PASSWORD,
+        port: Number(process.env.DB_PORT) || 5432,
+      }
+);
 
 pool.connect()
   .then((client)=> {
