@@ -102,6 +102,9 @@ export default function MonacoEditorPage(){
           }),
         });
         const data = await response.json();
+        if (!response.ok){ 
+            throw new Error(data?.message || data?.error || `Server error: ${response.status}`);
+        }
         setExecutionResult(data.result);
       }
       catch(error){
@@ -214,7 +217,7 @@ export default function MonacoEditorPage(){
             onClick={() => runCode(false)}
             disabled={isRunning}>
             <PlayCircle size={15}/>
-            Run
+            {isRunning ? "Running..." : "Run"}
           </button>
 
           <button
@@ -222,7 +225,7 @@ export default function MonacoEditorPage(){
             onClick={() => runCode(true)}
             disabled={isRunning}>
             <Send size={14}/>
-            Submit
+            {isRunning ? "Submitting..." : "Submit"}
           </button>
         </div>
       </header>
