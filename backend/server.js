@@ -5,39 +5,69 @@ import { Server } from "socket.io";
 import cors from "cors";
 import pg from "pg";
 import dotenv from "dotenv";
+import { WebSocketServer } from "ws";
+import runRoutes from './routes/runRoutes.js';
+import utils from "y-websocket/bin/utils.cjs";
+const { setupWSConnection } = utils;
 
 dotenv.config();
-const {Pool} = pg;
+const { Pool } = pg;
 const app = express();
-  
-app.use(cors({
-  origin:process.env.CLIENT_ORIGIN || 'http://localhost:5173',
-  credentials:true
-}));
+
+// 1. CORS Configuration (Allows localhost, Vite host, and local IP addresses)
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allows requests from localhost, 127.0.0.1, LAN IPs (192.168.x.x, 10.x.x.x), or no origin (curl/mobile)
+    callback(null, true);
+  },
+  credentials: true
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 const httpServer = createServer(app);
+
+// 2. Socket.io setup
 const io = new Server(httpServer, {
-  cors:{ 
-    origin:process.env.CLIENT_ORIGIN || 'http://localhost:5173',
-    credentials:true
-   }
+  cors: corsOptions
 });
 
+// 3. Yjs WebSocket setup (For real-time code editor synchronization)
+const wss = new WebSocketServer({ noServer: true });
+
+wss.on("connection", (conn, req) => {
+  // Extract document room name from path (e.g., /yjs/room_42)
+  const docName = req.url.slice(1).split("?")[0] || "default-room";
+  console.log(`[Yjs] Peer connected to doc: ${docName}`);
+  setupWSConnection(conn, req, { docName });
+});
+
+// Route HTTP Upgrade headers: /yjs goes to Yjs; everything else falls through to Socket.io
+httpServer.on("upgrade", (request, socket, head) => {
+  const url = request.url || "";
+  if (url.startsWith("/yjs")) {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit("connection", ws, request);
+    });
+  }
+});
+
+// 4. PostgreSQL Database Pool Configuration
 const pool = new Pool(
   process.env.DATABASE_URL
     ? { connectionString: process.env.DATABASE_URL }
     : {
-        user: process.env.DB_USER || "postgres",
-        host: process.env.DB_HOST || "localhost",
-        database: process.env.DB_NAME || "mafiagame",
-        password: process.env.DB_PASSWORD,
-        port: Number(process.env.DB_PORT) || 5432,
+        user: process.env.DB_USER || process.env.PGUSER || "postgres",
+        host: process.env.DB_HOST || process.env.PGHOST || "localhost",
+        database: process.env.DB_NAME || process.env.PGDATABASE || "mafiagame",
+        password: String(process.env.DB_PASSWORD || process.env.PGPASSWORD || ""),
+        port: Number(process.env.DB_PORT || process.env.PGPORT) || 5432,
       }
 );
 
 pool.connect()
-  .then((client)=> {
+  .then((client) => {
     console.log("Connected to PostgreSQL database");
     client.release();
   })
@@ -45,146 +75,142 @@ pool.connect()
     console.error("Error connecting to PostgreSQL database:", err);
   });
 
+// 5. Socket.io Gameplay & Room Handlers
 io.on("connection", (socket) => {
-  console.log("Client connected:", socket.id);
+  console.log("Client connected via Socket.io:", socket.id);
+
   socket.on("game:join", async ({ gameId, playerId }) => {
-    try{
-      if(!gameId || !playerId){
-        socket.emit("game:error", { 
-          message:"Missing gameId or playerId"
-        });
+    try {
+      if (!gameId || !playerId) {
+        socket.emit("game:error", { message: "Missing gameId or playerId" });
         return;
       }
       
-      const roomResult=await pool.query("SELECT * FROM rooms WHERE id = $1",[gameId]);
-      if(roomResult.rows.length===0){
-        socket.emit("game:error", { message:"Game not found" });
+      const roomResult = await pool.query("SELECT * FROM rooms WHERE id = $1", [gameId]);
+      if (roomResult.rows.length === 0) {
+        socket.emit("game:error", { message: "Game not found" });
         return;
       }
     
       socket.join(`game:${gameId}`);
-      const playerResult=await pool.query("SELECT * FROM room_players WHERE room_id = $1 AND user_id = $2",[gameId, playerId]);
-      if(playerResult.rows.length===0){
-        await pool.query(`
-          INSERT INTO room_players (room_id, user_id, role, is_alive)
-          VALUES ($1, $2, 'DEVELOPER', true)`
-          ,[gameId, playerId]);
+      const playerResult = await pool.query(
+        "SELECT * FROM room_players WHERE room_id = $1 AND user_id = $2",
+        [gameId, playerId]
+      );
+      if (playerResult.rows.length === 0) {
+        await pool.query(
+          `INSERT INTO room_players (room_id, user_id, role, is_alive)
+           VALUES ($1, $2, 'DEVELOPER', true)`,
+          [gameId, playerId]
+        );
       }
 
-      const playersResult=await pool.query(`
-        SELECT id, user_id, room_id, role, is_alive, joined_at 
-        FROM room_players WHERE room_id = $1`,[gameId]);
+      const playersResult = await pool.query(
+        `SELECT id, user_id, room_id, role, is_alive, joined_at 
+         FROM room_players WHERE room_id = $1`,
+        [gameId]
+      );
 
       io.to(`game:${gameId}`).emit("player:joined", {
         playerId,
-        players:playersResult.rows
+        players: playersResult.rows
       });
-      console.log(`Player ${playerId} joined game ${gameId}`);
-    } 
-    catch (err) {
+      console.log(`Player ${playerId} joined game room ${gameId}`);
+    } catch (err) {
       console.error("Error occurred while joining game:", err);
       socket.emit("game:error", { 
-        message:"An error occurred while joining the game" 
+        message: "An error occurred while joining the game" 
       });
     }
   });
 
-  socket.on("vote:cast", async ({ gameId, voterId, targetId })=>{
-    try{
-      if(!gameId || !voterId){
-        socket.emit("game:error", { 
-          message:"Missing gameId or voterId"
-        });
+  socket.on("vote:cast", async ({ gameId, voterId, targetId }) => {
+    try {
+      if (!gameId || !voterId) {
+        socket.emit("game:error", { message: "Missing gameId or voterId" });
         return;
       }
       
-      const voterResult=await pool.query(`
-        SELECT * FROM room_players 
-        WHERE room_id = $1 
-        AND user_id = $2
-        AND is_alive = TRUE`
-        ,[gameId, voterId]);
-
-      if(voterResult.rows.length===0){
-        socket.emit("game:error", { 
-          message:"Voter not found in the game"
-        });
-        return;
-      }
-      await pool.query(`
-        INSERT INTO votes(room_id, voter_id, voted_for_id)
-        VALUES ($1, $2, $3)`,[gameId, voterId, targetId]);
-
-      await pool.query(`
-        INSERT INTO game_logs(room_id, user_id, action_type, details)
-        VALUES ($1, $2, 'VOTE_CAST', $3)`,[gameId, voterId, JSON.stringify({
-            votedFor:targetId || null,
-          })
-        ]
+      const voterResult = await pool.query(
+        `SELECT * FROM room_players 
+         WHERE room_id = $1 AND user_id = $2 AND is_alive = TRUE`,
+        [gameId, voterId]
       );
 
-      const votesResult=await pool.query(`
-        SELECT voter_id, voted_for_id, created_at
-        FROM votes 
-        WHERE room_id = $1
-        ORDER BY created_at ASC`,
+      if (voterResult.rows.length === 0) {
+        socket.emit("game:error", { message: "Voter not found or not active in the game" });
+        return;
+      }
+
+      await pool.query(
+        `INSERT INTO votes(room_id, voter_id, voted_for_id) VALUES ($1, $2, $3)`,
+        [gameId, voterId, targetId]
+      );
+
+      await pool.query(
+        `INSERT INTO game_logs(room_id, user_id, action_type, details)
+         VALUES ($1, $2, 'VOTE_CAST', $3)`,
+        [gameId, voterId, JSON.stringify({ votedFor: targetId || null })]
+      );
+
+      const votesResult = await pool.query(
+        `SELECT voter_id, voted_for_id, created_at
+         FROM votes 
+         WHERE room_id = $1
+         ORDER BY created_at ASC`,
         [gameId]
       );
 
       io.to(`game:${gameId}`).emit("vote:updated", {
         voterId,
         targetId,
-        votes:votesResult.rows
+        votes: votesResult.rows
       });
-    } 
-    catch(err){
+    } catch (err) {
       console.error("Error occurred while casting vote:", err);
       socket.emit("vote:error", { 
-        message:"An error occurred while casting the vote" 
+        message: "An error occurred while casting the vote" 
       });
     }
   });
 
   socket.on("code:update", async ({ gameId, playerId, code }) => {
-    try{
-      if(!gameId || !playerId){
-        return;
-      }
-      await pool.query(`
-        INSERT INTO game_logs(room_id, user_id, action_type, details)
-        VALUES ($1, $2, 'CODE_EDIT', $3)`,[gameId, playerId, code || ""]
+    try {
+      if (!gameId || !playerId) return;
+
+      await pool.query(
+        `INSERT INTO game_logs(room_id, user_id, action_type, details)
+         VALUES ($1, $2, 'CODE_EDIT', $3)`,
+        [gameId, playerId, code || ""]
       );
 
-      socket.to(`game:${gameId}`)
-      .emit("code:updated", { 
+      socket.to(`game:${gameId}`).emit("code:updated", { 
         playerId, 
         code 
       });
-    } catch (err){
-    console.error("Error occurred while updating code:", err);
-    socket.emit("game:error", { 
-      message:"An error occurred while updating the code" 
-    });
+    } catch (err) {
+      console.error("Error occurred while updating code:", err);
+      socket.emit("game:error", { 
+        message: "An error occurred while updating the code" 
+      });
     }
   });
 
-  socket.on("code:run", async({gameId, playerId, code})=>{
-    try{
-      if(!gameId || !playerId){
-        return;
-      }
-      await pool.query(`
-        INSERT INTO game_logs(room_id, user_id, action_type, details)
-        VALUES ($1, $2, 'RUN_TEST', $3)`,[gameId, playerId, code || ""]
+  socket.on("code:run", async ({ gameId, playerId, code }) => {
+    try {
+      if (!gameId || !playerId) return;
+
+      await pool.query(
+        `INSERT INTO game_logs(room_id, user_id, action_type, details)
+         VALUES ($1, $2, 'RUN_TEST', $3)`,
+        [gameId, playerId, code || ""]
       );
 
-      io.to(`game:${gameId}`).emit("code:test:started", {
-        playerId,
-      });
+      io.to(`game:${gameId}`).emit("code:test:started", { playerId });
     } catch (err) {
       console.error("Error occurred while running code:", err);
       socket.emit("code:error", {
-        message:"An error occurred while running the code"
+        message: "An error occurred while running the code"
       });
     }
   });
@@ -194,32 +220,22 @@ io.on("connection", (socket) => {
   });
 });
 
-//app.use('/api/auth', authRouter);
+// 6. Basic Health Routes
 app.get("/", (req, res) => { 
-  res.json({ 
-    message:"Code Mafia Game Server is running"
-  });
+  res.json({ message: "Code Mafia Game Server is running" });
 });
 
 app.get("/health", async (req, res) => { 
-  try{ 
+  try { 
     await pool.query("SELECT 1"); 
-    res.json({ 
-      status:"ok", 
-      database:"connected" 
-    }); 
-  } catch (err){
+    res.json({ status: "ok", database: "connected" }); 
+  } catch (err) {
     console.error("Health check error:", err); 
-    res.status(500).json({ 
-      status:"error", 
-      database:"disconnected", 
-    });
+    res.status(500).json({ status: "error", database: "disconnected" });
   } 
 });
 
-// ==========================================
-// 1. GET /api/rooms/:roomCode
-// ==========================================
+// 7. REST Endpoints
 app.get("/api/rooms/:roomCode", async (req, res) => {
   try {
     const { roomCode } = req.params;
@@ -270,9 +286,6 @@ app.get("/api/rooms/:roomCode", async (req, res) => {
   }
 });
 
-// ==========================================
-// 2. GET /api/rooms/:roomId/players
-// ==========================================
 app.get("/api/rooms/:roomId/players", async (req, res) => {
   try {
     const { roomId } = req.params;
@@ -294,7 +307,7 @@ app.get("/api/rooms/:roomId/players", async (req, res) => {
 
     const { rows } = await pool.query(query, [roomId]);
 
-    // Security check: Mask the MAFIA role unless the caller is requesting their own profile[cite: 1, 2]
+    // Security check: Mask the MAFIA role unless the caller requests their own profile[cite: 1, 5]
     const players = rows.map((p) => {
       const isSelf = requestingUserId && requestingUserId === p.userId;
       return {
@@ -313,9 +326,6 @@ app.get("/api/rooms/:roomId/players", async (req, res) => {
   }
 });
 
-// ==========================================
-// 3. GET /api/challenges
-// ==========================================
 app.get("/api/challenges", async (req, res) => {
   try {
     const query = `
@@ -345,9 +355,6 @@ app.get("/api/challenges", async (req, res) => {
   }
 });
 
-// ==========================================
-// 4. GET /api/challenges/:id
-// ==========================================
 app.get("/api/challenges/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -371,7 +378,7 @@ app.get("/api/challenges/:id", async (req, res) => {
     const ch = rows[0];
     const testCases = Array.isArray(ch.testCases) ? ch.testCases : [];
 
-    // Filter out hidden tests and omit solution_code completely[cite: 1, 2]
+    // Filter out hidden tests and omit solution_code completely[cite: 1, 5]
     const publicTestCases = testCases
       .filter((tc) => !tc.hidden)
       .map((tc) => ({
@@ -396,9 +403,12 @@ app.get("/api/challenges/:id", async (req, res) => {
   }
 });
 
-// Mount Auth Endpoints
+// 8. Auth Router Mount
 app.use('/api/auth', authRouter);
+app.use('/api', runRoutes);
+
+// 9. Start Server on 0.0.0.0 (Accepts all interfaces / network hosts)
 const PORT = process.env.PORT || 5000;
-httpServer.listen(PORT, () => {
-  console.log(`Backend server active at http://localhost:${PORT}/api`);
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`Backend server active on all interfaces at http://0.0.0.0:${PORT}`);
 });
