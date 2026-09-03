@@ -193,6 +193,35 @@ export default function GameArena() {
     return () => clearInterval(timer);
   }, [lockTimeLeft]);
 
+  // Match Timer countdown (10 minutes = 600s)
+  const [matchTimeLeft, setMatchTimeLeft] = useState(600);
+  const [matchEnded, setMatchEnded] = useState(false);
+  const [winnerTeam, setWinnerTeam] = useState(null);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setMatchTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setMatchEnded(true);
+          setWinnerTeam("MAFIA");
+          sounds.playGlitch();
+          showToast("⏰ TIME EXPIRED: Secret Mafia Victory! (Sabotage Succeeded)");
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatMatchTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
   // Meeting timer countdown & Resolution
   useEffect(() => {
     let interval = null;
@@ -213,33 +242,54 @@ export default function GameArena() {
   const resolveMeetingVoting = () => {
     setMeetingOpen(false);
 
-    // Calculate highest voted player
+    // Calculate vote counts
     const voteCounts = {};
+    let skipCount = 0;
+
     Object.values(votes).forEach((target) => {
-      if (target !== "SKIP") {
+      if (target === "SKIP") {
+        skipCount++;
+      } else {
         voteCounts[target] = (voteCounts[target] || 0) + 1;
       }
     });
 
+    // Check for ties or skips
+    const sorted = Object.entries(voteCounts).sort((a, b) => b[1] - a[1]);
     let highestPlayer = null;
-    let maxV = 0;
-    for (const [p, count] of Object.entries(voteCounts)) {
-      if (count > maxV) {
-        maxV = count;
-        highestPlayer = p;
+
+    if (sorted.length > 0) {
+      const topCount = sorted[0][1];
+      const isTie = sorted.length > 1 && sorted[1][1] === topCount;
+
+      if (!isTie && topCount > skipCount) {
+        highestPlayer = sorted[0][0];
       }
     }
 
-    const isMafia = highestPlayer ? (highestPlayer.toLowerCase().includes("ghost") || highestPlayer === "Ghost" || activeRole === "MAFIA") : false;
+    if (!highestPlayer) {
+      setEjectedPlayer("Nobody (Vote Tied or Skipped)");
+      setWasMafiaEjected(false);
+      setEjectionOpen(true);
+      showToast("⚖️ Voting tied or skipped. No agent was ejected.");
+      return;
+    }
 
-    setEjectedPlayer(highestPlayer || "Nobody (Skipped)");
-    setWasMafiaEjected(Boolean(highestPlayer && isMafia));
+    const isMafia = highestPlayer.toLowerCase().includes("ghost") || highestPlayer === "Ghost" || activeRole === "MAFIA";
+
+    setEjectedPlayer(highestPlayer);
+    setWasMafiaEjected(Boolean(isMafia));
     setEjectionOpen(true);
+
+    if (isMafia) {
+      setWinnerTeam("DEVELOPERS");
+      setMatchEnded(true);
+    }
 
     socket?.emit("meeting:finish", {
       roomCode,
-      ejectedPlayer: highestPlayer || "Nobody",
-      wasMafia: Boolean(highestPlayer && isMafia)
+      ejectedPlayer: highestPlayer,
+      wasMafia: Boolean(isMafia)
     });
   };
 
@@ -452,6 +502,14 @@ export default function GameArena() {
             <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-emerald-400 animate-ping" />
             <span className="font-mono text-xs sm:text-sm font-black text-cyan-300 uppercase">
               #{roomCode}
+            </span>
+          </div>
+
+          {/* Match Countdown Timer */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 font-mono text-xs font-bold shadow-inner">
+            <Clock size={12} className={matchTimeLeft < 60 ? "text-rose-400 animate-pulse" : "text-cyan-400"} />
+            <span className={matchTimeLeft < 60 ? "text-rose-400 animate-pulse" : "text-white"}>
+              {formatMatchTime(matchTimeLeft)}
             </span>
           </div>
 

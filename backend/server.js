@@ -293,42 +293,64 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Map to track emergency meetings used per room (Key: roomCode, Value: Set of usernames)
+  const roomMeetings = new Map();
+
   // 8. EMERGENCY MEETING & ELIMINATION VOTING
   socket.on("meeting:call", ({ roomCode, callerName }) => {
-    console.log(`🚨 [Emergency Meeting] Called by ${callerName} in Room ${roomCode}`);
+    const norm = roomCode?.trim().toUpperCase();
+    if (!roomMeetings.has(norm)) {
+      roomMeetings.set(norm, new Set());
+    }
 
-    recordEvent(roomCode, {
+    const usedSet = roomMeetings.get(norm);
+    if (usedSet.has(callerName)) {
+      socket.emit("sabotage:effect", {
+        type: "MEETING_BLOCKED",
+        durationSec: 3,
+        message: "⚠️ Emergency meeting quota spent! (Max 1 per operative per match)"
+      });
+      return;
+    }
+
+    usedSet.add(callerName);
+    console.log(`🚨 [Emergency Meeting] Called by ${callerName} in Room ${norm}`);
+
+    recordEvent(norm, {
       author: callerName,
       authorRole: "DEVELOPER",
       action: "MEETING",
       details: `🚨 ${callerName} sounded the Emergency Alarm! Voting tribunal opened.`
     });
 
-    io.to(roomCode).emit("meeting:started", {
+    io.to(norm).emit("meeting:started", {
       callerName,
       meetingDurationSec: 45
     });
   });
 
   socket.on("meeting:vote", ({ roomCode, voterName, targetUsername }) => {
-    io.to(roomCode).emit("meeting:vote_cast", {
+    const norm = roomCode?.trim().toUpperCase();
+    io.to(norm).emit("meeting:vote_cast", {
       voterName,
       targetUsername
     });
   });
 
   socket.on("meeting:finish", ({ roomCode, ejectedPlayer, wasMafia, votersWhoVotedCorrectly = [] }) => {
+    const norm = roomCode?.trim().toUpperCase();
+
     // Award +300 XP to detectives who voted correctly
     if (wasMafia && votersWhoVotedCorrectly.length > 0) {
       votersWhoVotedCorrectly.forEach((voter) => {
-        awardPoints(roomCode, voter, 300, "VOTE_CORRECT");
+        awardPoints(norm, voter, 300, "VOTE_CORRECT");
       });
     }
 
-    io.to(roomCode).emit("meeting:ejected", {
+    io.to(norm).emit("meeting:ejected", {
       ejectedPlayer,
       wasMafia,
-      leaderboard: getLeaderboard(roomCode)
+      leaderboard: getLeaderboard(norm)
     });
   });
 

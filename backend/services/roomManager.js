@@ -77,26 +77,32 @@ export function joinRoom(roomCode, socketId, username) {
         rooms.size > 0 ? Array.from(rooms.keys()).join(", ") : "None (Create a room first)"
       }`
     };
+  let finalUsername = username.trim();
+
+  // 1. Check if this is a reconnecting player (by username)
+  const existingPlayerByName = room.players.find(
+    (p) => p.username.toLowerCase() === finalUsername.toLowerCase()
+  );
+
+  if (existingPlayerByName) {
+    existingPlayerByName.socketId = socketId;
+    if (!room.hostSocketId && existingPlayerByName.isHost) {
+      room.hostSocketId = socketId;
+    }
+    console.log(`🔄 [Player Reconnected] ${finalUsername} rejoined Room: ${normalizedCode} (Role: ${existingPlayerByName.role})`);
+    return { room, player: existingPlayerByName, reconnected: true };
   }
 
+  // 2. If room is in progress and player was not previously in room, reject
   if (room.status !== "LOBBY") {
-    return { error: "Game is already in progress in this room." };
+    return { error: "Match is already in progress in this room." };
   }
 
   if (room.players.length >= room.maxPlayers) {
     return { error: "Room is already full." };
   }
 
-  let finalUsername = username.trim();
-
-  // 1. If player with same socket is already in room, update & return
-  const existingPlayerBySocket = room.players.find((p) => p.socketId === socketId);
-  if (existingPlayerBySocket) {
-    existingPlayerBySocket.username = finalUsername;
-    return { room, player: existingPlayerBySocket };
-  }
-
-  // 2. If username is already taken by another player, auto-assign a friendly suffix (e.g. Alex (2))
+  // 3. If username is taken, auto-suffix
   let counter = 2;
   const originalName = finalUsername;
   while (room.players.some((p) => p.username.toLowerCase() === finalUsername.toLowerCase())) {
@@ -107,7 +113,7 @@ export function joinRoom(roomCode, socketId, username) {
   const newPlayer = {
     socketId,
     username: finalUsername,
-    isHost: room.players.length === 0, // If room was empty, make first joiner host
+    isHost: room.players.length === 0,
     role: null,
     isAlive: true,
     joinedAt: Date.now()
