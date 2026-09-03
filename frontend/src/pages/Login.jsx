@@ -138,7 +138,6 @@ function Login() {
                         <AnimatedLogo/>
                     </div>
                     <h1>Welcome Back</h1>
-                    <p>Your ChatBot is waiting</p>
                 </div>
             </div>
             <div className={styles.rightSection}>
