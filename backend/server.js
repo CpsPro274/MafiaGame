@@ -217,7 +217,6 @@ app.get("/health", async (req, res) => {
 "/api/challenges/:id"
 
 const PORT = process.env.PORT || 5000;
-
 httpServer.listen(PORT, () => {
   console.log(`Backend server active at http://localhost:${PORT}/api`);
 });
