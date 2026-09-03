@@ -19,8 +19,7 @@ body {
   position: relative;
   z-index: 1;
   max-width: 1100px;
-  /* Aligns well with max-w-7xl/4xl usage */
-  margin: 0 auto;
+    margin: 0 auto;
   padding: 7rem 1rem 3rem;
   display: flex;
   flex-direction: column;
@@ -39,8 +38,7 @@ body {
   border-radius: 50%;
   filter: blur(120px);
   opacity: 0.08;
-  /* Reduced opacity for minimalism */
-  pointer-events: none;
+    pointer-events: none;
 }
 
 .logo {
@@ -57,8 +55,7 @@ body {
 .hero {
   width: 100%;
   max-width: 896px;
-  /* 896px = max-w-4xl from design system */
-  min-height: 80vh;
+    min-height: 80vh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -96,18 +93,15 @@ body {
 }
 
 .gradient {
-  /* Minimal system avoids neon gradients, using primary emphasis instead */
-  color: hsl(var(--muted-foreground));
+    color: hsl(var(--muted-foreground));
 }
 
 .description {
   max-width: 672px;
-  /* 672px = max-w-2xl from design system */
-  margin: 0 auto;
+    margin: 0 auto;
   color: hsl(var(--muted-foreground));
   font-size: 1.125rem;
-  /* text-lg equivalent */
-  line-height: 1.7;
+    line-height: 1.7;
 }
 
 .description strong {
@@ -127,8 +121,7 @@ body {
   justify-content: center;
   gap: 0.5rem;
   border: 1px solid hsl(var(--foreground));
-  /* Solid border on default */
-  border-radius: var(--radius);
+    border-radius: var(--radius);
   cursor: pointer;
   font-family: inherit;
   transition: opacity 0.2s ease-in-out, background-color 0.2s ease-in-out;
@@ -141,8 +134,7 @@ body {
 
 .btnPrimary:hover {
   opacity: 0.9;
-  /* Border remains hsl(var(--foreground)) */
-}
+  }
 
 .btnSecondary {
   background-color: transparent;
@@ -180,8 +172,7 @@ body {
 
 .sectionHeader {
   max-width: 768px;
-  /* max-w-3xl */
-  margin: 0 auto;
+    margin: 0 auto;
   text-align: center;
 }
 
@@ -220,8 +211,7 @@ body {
 
 .card {
   padding: 1.5rem;
-  /* p-6 equivalent */
-  background-color: hsl(var(--card));
+    background-color: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   text-align: left;
@@ -230,8 +220,7 @@ body {
 
 .card:hover {
   box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  /* Minimal shadow */
-  border-color: hsl(var(--foreground));
+    border-color: hsl(var(--foreground));
 }
 
 .icon {
@@ -377,8 +366,7 @@ body {
 
 .cta {
   padding: 4rem 1.5rem;
-  /* Reduced slightly for minimal whitespace */
-  border: 1px solid hsl(var(--border));
+    border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   background-color: hsl(var(--card));
 }
@@ -387,8 +375,7 @@ body {
   margin: 0 0 1rem;
   color: hsl(var(--foreground));
   font-size: 2.25rem;
-  /* text-4xl */
-  font-weight: 700;
+    font-weight: 700;
   line-height: 1.1;
   letter-spacing: -0.02em;
 }
@@ -400,8 +387,7 @@ body {
 .footer {
   width: 100%;
   margin-top: 4rem;
-  /* Adjusted for standard mt-16 */
-  padding-top: 2rem;
+    padding-top: 2rem;
   border-top: 1px solid hsl(var(--border));
   display: flex;
   align-items: center;
@@ -421,10 +407,8 @@ body {
 .footerCopyright {
   color: hsl(var(--muted-foreground));
   font-size: 0.875rem;
-  /* text-sm */
-}
+  }
 
-/* Media queries remain structurally identical but adapt to the new font sizing */
 @media (max-width: 900px) {
   .main {
     padding-top: 6rem;

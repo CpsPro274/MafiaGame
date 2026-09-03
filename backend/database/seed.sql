@@ -1,16 +1,10 @@
--- ============================================================================
--- SAMPLE SEED DATA (seed.sql)
--- Run after auth_schema.sql and game_schema.sql
--- ============================================================================
 
--- 1. Sample Users (Login data)
 INSERT INTO users (username, email, password)
 VALUES 
     ('alex_dev', 'alex@gmail.com', 'password123'),
     ('sam_mafia', 'sam@gmail.com', 'password123')
 ON CONFLICT (username) DO NOTHING;
 
--- 2. Sample Challenge (Shopping Cart Buggy Code)
 INSERT INTO challenges (title, description, language, buggy_code, solution_code, test_cases)
 VALUES (
     'Fix Shopping Cart Total',

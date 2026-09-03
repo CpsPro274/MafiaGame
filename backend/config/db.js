@@ -14,7 +14,6 @@ const dbHost = process.env.DB_HOST || "127.0.0.1";
 const dbPort = parseInt(process.env.DB_PORT || "5432", 10);
 const dbName = process.env.DB_NAME || "MafiaGame";
 
-// Connection pool configuration
 export const pool = new Pool({
   user: dbUser,
   host: dbHost,
@@ -23,17 +22,14 @@ export const pool = new Pool({
   port: dbPort,
 });
 
-// Helper for executing queries
 export const query = (text, params) => pool.query(text, params);
 
-// Test database connection
 export async function testDbConnection() {
   try {
     const res = await pool.query("SELECT current_database(), NOW()");
     console.log(`✅ PostgreSQL Connected to database: "${res.rows[0].current_database}"`);
     return true;
   } catch (err) {
-    // If exact name failed, check with lowercase
     if (err.message.includes("does not exist") || err.message.includes("database")) {
       try {
         const fallbackPool = new Pool({

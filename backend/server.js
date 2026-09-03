@@ -20,7 +20,12 @@ import {
   leaveRoom,
   startGame,
   getRoom,
-  setRoomDifficulty
+  setRoomDifficulty,
+  advanceToDebugPhase,
+  advanceToVotingPhase,
+  recordVote,
+  tallyVotesAndEvaluate,
+  completeGame
 } from "./services/roomManager.js";
 import {
   saveRoomToDb,
@@ -34,13 +39,12 @@ import {
   getReplay
 } from "./services/replayManager.js";
 import { getChallengeByDifficulty } from "./services/challengeService.js";
-import { initScores, awardPoints, getLeaderboard } from "./services/scoreManager.js";
+import { initScores, awardPoints, finalizeMatchScores, getLeaderboard } from "./services/scoreManager.js";
 
 const app = express();
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, curl, or same-origin)
     if (!origin) return callback(null, true);
     return callback(null, origin);
   },
@@ -65,27 +69,21 @@ const io = new Server(httpServer, {
   transports: ["websocket", "polling"]
 });
 
-// Provide io instance to Express routes
 app.set("io", io);
 
-// ==========================================
-// REST API ROUTES
-// ==========================================
 app.use("/api/auth", authRoutes);
 app.use("/api/challenges", challengeRoutes);
-app.use("/api", roomRoutes); // Mounts /api/create-room, /api/join-room, /api/rooms
+app.use("/api", roomRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Fetch Replay Timeline for a match
 app.get("/api/matches/:roomCode/replay", (req, res) => {
   const replay = getReplay(req.params.roomCode);
   res.json(replay);
 });
 
-// Check if a room exists before joining
 app.get("/api/rooms/:roomCode", (req, res) => {
   const room = getRoom(req.params.roomCode);
   if (!room) {
@@ -101,7 +99,6 @@ app.get("/api/rooms/:roomCode", (req, res) => {
   });
 });
 
-// Code execution endpoint for running test suites
 app.post("/api/run-code", (req, res) => {
   const { roomId, userId, code, language, submit } = req.body;
 
@@ -178,9 +175,97 @@ app.post("/api/run-code", (req, res) => {
   });
 });
 
-// ==========================================
-// REAL-TIME SOCKET.IO ROOM & GAMEPLAY EVENTS
-// ==========================================
+const roomTimers = new Map();
+
+function clearRoomTimer(roomCode) {
+  const norm = roomCode?.trim().toUpperCase();
+  if (roomTimers.has(norm)) {
+    clearTimeout(roomTimers.get(norm).timer);
+    roomTimers.delete(norm);
+  }
+}
+
+function startDebugPhase(io, roomCode) {
+  const norm = roomCode?.trim().toUpperCase();
+  clearRoomTimer(norm);
+
+  const room = advanceToDebugPhase(norm);
+  if (!room) return;
+
+  console.log(`⏱️ [Phase Changed: DEBUG] Room: ${norm} (${room.timeLimit}s)`);
+
+  io.to(norm).emit("room:phase_changed", {
+    phase: "DEBUG",
+    timeLimit: room.timeLimit,
+    phaseExpiresAt: room.phaseExpiresAt,
+    message: "Sabotage phase completed! All operatives are now authorized to debug the codebase."
+  });
+
+  const timer = setTimeout(() => {
+    startVotingPhase(io, norm);
+  }, (room.timeLimit || 600) * 1000);
+
+  roomTimers.set(norm, { timer, phase: "DEBUG" });
+}
+
+function startVotingPhase(io, roomCode) {
+  const norm = roomCode?.trim().toUpperCase();
+  clearRoomTimer(norm);
+
+  const room = advanceToVotingPhase(norm);
+  if (!room) return;
+
+  console.log(`🚨 [Phase Changed: VOTING] Room: ${norm} (${room.votingDuration}s)`);
+
+  io.to(norm).emit("room:phase_changed", {
+    phase: "VOTING",
+    votingDuration: room.votingDuration,
+    phaseExpiresAt: room.phaseExpiresAt,
+    message: "Round time expired! Emergency voting tribunal initiated."
+  });
+
+  io.to(norm).emit("meeting:started", {
+    callerName: "ROUND_TIMER_EXPIRED",
+    meetingDurationSec: room.votingDuration
+  });
+
+  const timer = setTimeout(() => {
+    finalizeVoting(io, norm);
+  }, room.votingDuration * 1000);
+
+  roomTimers.set(norm, { timer, phase: "VOTING" });
+}
+
+function finalizeVoting(io, roomCode) {
+  const norm = roomCode?.trim().toUpperCase();
+  clearRoomTimer(norm);
+
+  const result = tallyVotesAndEvaluate(norm);
+  if (!result) return;
+
+  console.log(`⚖️ [Voting Finalized] Room ${norm}: Ejected=${result.ejectedPlayer?.username || "None"}, Winner=${result.winnerTeam}`);
+
+  io.to(norm).emit("meeting:result", {
+    ejectedPlayer: result.ejectedPlayer ? result.ejectedPlayer.username : null,
+    wasMafia: result.wasMafia,
+    winnerTeam: result.winnerTeam,
+    endReason: result.endReason,
+    aliveMafia: result.aliveMafia,
+    aliveDevs: result.aliveDevs,
+    votes: result.votes
+  });
+
+  if (result.winnerTeam) {
+    const finalLeaderboard = finalizeMatchScores(norm, result.winnerTeam);
+    io.to(norm).emit("game:finished", {
+      winnerTeam: result.winnerTeam,
+      endReason: result.endReason,
+      replay: getReplay(norm),
+      leaderboard: finalLeaderboard
+    });
+  }
+}
+
 io.on("connection", (socket) => {
   console.log(`[Socket Connected] ID: ${socket.id}`);
   socket.on("room:create", async ({ username, difficulty = "MEDIUM", maxPlayers = 8, timeLimit = 30, mafiaCount = 1 }, callback) => {
@@ -189,7 +274,6 @@ io.on("connection", (socket) => {
         return callback?.({ success: false, error: "Username is required." });
       }
 
-      // Convert timeLimit from minutes to seconds
       const timeLimitSeconds = Number(timeLimit) > 0 ? Number(timeLimit) * 60 : 1800;
 
       const { room, player } = createRoom(socket.id, username, difficulty, Number(maxPlayers), {
@@ -213,7 +297,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 2. SET DIFFICULTY IN LOBBY
   socket.on("room:set_difficulty", ({ roomCode, difficulty }) => {
     const updatedRoom = setRoomDifficulty(roomCode, difficulty);
     if (updatedRoom) {
@@ -221,7 +304,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 3. JOIN ROOM
   socket.on("room:join", async ({ roomCode, username }, callback) => {
     try {
       if (!roomCode || !username) {
@@ -258,7 +340,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 4. START MATCH & LOAD CHALLENGE BY DIFFICULTY
   socket.on("game:start", async ({ roomCode }, callback) => {
     try {
       const result = startGame(roomCode, socket.id);
@@ -268,30 +349,47 @@ io.on("connection", (socket) => {
 
       const { room } = result;
 
-      // Load curated challenge based on selected difficulty (EASY, MEDIUM, HARD)
       const challengeData = getChallengeByDifficulty(room.difficulty || "MEDIUM");
 
-      // Initialize Replay Timeline & Points Manager
       initTimeline(room.roomCode, challengeData.buggy_code, room.players);
       initScores(room.roomCode, room.players);
 
-      console.log(`[Match Started] Room: ${room.roomCode} (${room.difficulty}) with ${room.players.length} players`);
+      console.log(`[Match Started] Room: ${room.roomCode} (${room.difficulty}) - Initial SABOTAGE phase (30s)`);
 
-      // Emit secret role individually
+      clearRoomTimer(room.roomCode);
+      const timer = setTimeout(() => {
+        startDebugPhase(io, room.roomCode);
+      }, room.sabotageDuration * 1000);
+      roomTimers.set(room.roomCode, { timer, phase: "SABOTAGE" });
+
       room.players.forEach((p) => {
-        io.to(p.socketId).emit("game:started", {
-          roomCode: room.roomCode,
-          role: p.role,
-          room: {
-            ...room,
-            players: room.players.map((other) => ({
-              ...other,
-              role: other.socketId === p.socketId ? other.role : "???"
-            }))
-          },
-          challenge: challengeData,
-          leaderboard: getLeaderboard(room.roomCode)
-        });
+        if (p.socketId) {
+          io.to(p.socketId).emit("game:started", {
+            roomCode: room.roomCode,
+            role: p.role,
+            phase: "SABOTAGE",
+            sabotageDuration: room.sabotageDuration,
+            phaseExpiresAt: room.phaseExpiresAt,
+            room: {
+              ...room,
+              players: room.players.map((other) => ({
+                ...other,
+                role: other.socketId === p.socketId ? other.role : "???"
+              }))
+            },
+            challenge: challengeData,
+            leaderboard: getLeaderboard(room.roomCode)
+          });
+        }
+      });
+
+      io.to(room.roomCode).emit("room:game_started", {
+        roomCode: room.roomCode,
+        challenge: challengeData,
+        phase: "SABOTAGE",
+        sabotageDuration: room.sabotageDuration,
+        phaseExpiresAt: room.phaseExpiresAt,
+        room
       });
 
       callback?.({ success: true });
@@ -302,9 +400,24 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 5. CODE EDIT IN COLLABORATIVE BUFFER
+  socket.on("sabotage:finish_early", ({ roomCode }) => {
+    const norm = roomCode?.trim().toUpperCase();
+    const room = getRoom(norm);
+    if (room && room.phase === "SABOTAGE") {
+      console.log(`⏩ [Sabotage Finished Early] Room: ${norm} by Mafia operative`);
+      startDebugPhase(io, norm);
+    }
+  });
+
   socket.on("code:edit", ({ roomCode, author, authorRole, code, details, activeLines }) => {
-    recordEvent(roomCode, {
+    const norm = roomCode?.trim().toUpperCase();
+    const room = getRoom(norm);
+
+    if (room && room.phase === "SABOTAGE" && authorRole !== "MAFIA") {
+      return;
+    }
+
+    recordEvent(norm, {
       author,
       authorRole,
       action: authorRole === "MAFIA" ? "SABOTAGE" : "CODE_EDIT",
@@ -312,12 +425,13 @@ io.on("connection", (socket) => {
       code,
       activeLines
     });
-    socket.to(roomCode).emit("code:updated", { code, author, activeLines });
+    socket.to(norm).emit("code:updated", { code, author, activeLines });
   });
 
-  // 6. TEST RUN EXECUTION
-  socket.on("test:run", ({ roomCode, author, authorRole, passed, details, code }) => {
+  socket.on("test:run", ({ roomCode, author, authorRole, passed, submit, details, code }) => {
     const norm = roomCode?.trim().toUpperCase();
+    const room = getRoom(norm);
+
     recordEvent(norm, {
       author,
       authorRole,
@@ -326,14 +440,47 @@ io.on("connection", (socket) => {
       code
     });
 
-    io.to(norm).emit("test:result", { passed, details, author });
+    io.to(norm).emit("test:result", { passed, submit, details, author });
+
+    if (submit && passed && room && room.status === "IN_PROGRESS") {
+      clearRoomTimer(norm);
+      completeGame(norm, "DEVELOPERS", "All Unit Tests Passed! Developers repaired the codebase before time ran out.");
+      const finalLeaderboard = finalizeMatchScores(norm, "DEVELOPERS");
+      console.log(`🏆 [Game Concluded: DEVELOPERS WIN] All tests passed in Room: ${norm}`);
+
+      io.to(norm).emit("game:finished", {
+        winnerTeam: "DEVELOPERS",
+        endReason: "All Unit Tests Passed! Developers successfully repaired the codebase.",
+        replay: getReplay(norm),
+        leaderboard: finalLeaderboard
+      });
+    }
   });
 
-  // 7. TACTICAL SABOTAGE ABILITIES & XP
-  socket.on("sabotage:trigger", ({ roomCode, ability, senderName, senderRole, targetLines }) => {
-    console.log(`💣 [Sabotage Triggered] Ability: ${ability} by ${senderName} (${senderRole}) in Room: ${roomCode}`);
+  const powerupCooldowns = new Map();
 
-    recordEvent(roomCode, {
+  socket.on("sabotage:trigger", ({ roomCode, ability, senderName, senderRole, targetLines }) => {
+    const norm = roomCode?.trim().toUpperCase();
+    const room = getRoom(norm);
+    const totalTime = room?.timeLimit || 600;
+    const cooldownSec = Math.max(15, Math.round(totalTime / 5));
+    const cdKey = `${norm}:${senderName}:${ability}`;
+    const now = Date.now();
+
+    if (powerupCooldowns.has(cdKey) && powerupCooldowns.get(cdKey) > now) {
+      const remainingSec = Math.ceil((powerupCooldowns.get(cdKey) - now) / 1000);
+      socket.emit("sabotage:effect", {
+        type: "COOLDOWN_ACTIVE",
+        durationSec: 3,
+        message: `⏳ ${ability} is on cooldown! (${remainingSec}s remaining)`
+      });
+      return;
+    }
+
+    powerupCooldowns.set(cdKey, now + cooldownSec * 1000);
+    console.log(`💣 [Sabotage Triggered] Ability: ${ability} by ${senderName} (${senderRole}) in Room: ${norm} (Cooldown: ${cooldownSec}s)`);
+
+    recordEvent(norm, {
       author: senderName,
       authorRole: senderRole,
       action: "SABOTAGE",
@@ -341,34 +488,20 @@ io.on("connection", (socket) => {
       activeLines: targetLines || []
     });
 
-    // Award Mafia +200 XP for executing a tactical sabotage
-    if (senderRole === "MAFIA") {
-      const scoreRes = awardPoints(roomCode, senderName, 200, "SABOTAGE");
-      if (scoreRes) {
-        io.to(roomCode).emit("score:updated", {
-          awardedTo: senderName,
-          points: 200,
-          reason: `Executed ${ability} Sabotage! (+200 XP)`,
-          leaderboard: scoreRes.allScores
-        });
-      }
-    }
-
-    // Broadcast effect
     if (ability === "SCREEN_GLITCH") {
-      socket.to(roomCode).emit("sabotage:effect", {
+      socket.to(norm).emit("sabotage:effect", {
         type: "SCREEN_GLITCH",
         durationSec: 6,
         message: "⚠️ CRITICAL SYSTEM GLITCH: Matrix interference detected!"
       });
     } else if (ability === "FALSE_GREEN") {
-      socket.to(roomCode).emit("sabotage:effect", {
+      socket.to(norm).emit("sabotage:effect", {
         type: "FALSE_GREEN",
         durationSec: 15,
         message: "🟢 ALL 3 UNIT TESTS PASSED (Simulated Verification)"
       });
     } else if (ability === "FUNCTION_LOCK") {
-      io.to(roomCode).emit("sabotage:effect", {
+      io.to(norm).emit("sabotage:effect", {
         type: "FUNCTION_LOCK",
         durationSec: 10,
         lockedLines: targetLines || [4, 5, 6, 7, 8],
@@ -383,10 +516,8 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Map to track emergency meetings used per room (Key: roomCode, Value: Set of usernames)
   const roomMeetings = new Map();
 
-  // 8. EMERGENCY MEETING & ELIMINATION VOTING
   socket.on("meeting:call", ({ roomCode, callerName }) => {
     const norm = roomCode?.trim().toUpperCase();
     if (!roomMeetings.has(norm)) {
@@ -421,49 +552,49 @@ io.on("connection", (socket) => {
 
   socket.on("meeting:vote", ({ roomCode, voterName, targetUsername }) => {
     const norm = roomCode?.trim().toUpperCase();
+    const voteRes = recordVote(norm, voterName, targetUsername);
+    if (!voteRes) return;
+
     io.to(norm).emit("meeting:vote_cast", {
       voterName,
-      targetUsername
+      targetUsername,
+      votes: voteRes.votes
     });
-  });
 
-  socket.on("meeting:finish", ({ roomCode, ejectedPlayer, wasMafia, votersWhoVotedCorrectly = [] }) => {
-    const norm = roomCode?.trim().toUpperCase();
-
-    // Award +300 XP to detectives who voted correctly
-    if (wasMafia && votersWhoVotedCorrectly.length > 0) {
-      votersWhoVotedCorrectly.forEach((voter) => {
-        awardPoints(norm, voter, 300, "VOTE_CORRECT");
-      });
+    if (voteRes.allVoted) {
+      console.log(`🗳️ [All Votes Cast] Finalizing voting tribunal for Room: ${norm}`);
+      clearRoomTimer(norm);
+      setTimeout(() => {
+        finalizeVoting(io, norm);
+      }, 1200);
     }
-
-    io.to(norm).emit("meeting:ejected", {
-      ejectedPlayer,
-      wasMafia,
-      leaderboard: getLeaderboard(norm)
-    });
   });
 
-  // 9. FINISH MATCH
-  socket.on("game:finish", ({ roomCode, winnerTeam, endReason }) => {
-    const replay = getReplay(roomCode);
-    const leaderboard = getLeaderboard(roomCode);
+  socket.on("meeting:finish", ({ roomCode }) => {
+    const norm = roomCode?.trim().toUpperCase();
+    finalizeVoting(io, norm);
+  });
 
-    io.to(roomCode).emit("game:finished", {
-      winnerTeam, // 'DEVELOPERS' | 'MAFIA'
+  socket.on("game:finish", ({ roomCode, winnerTeam, endReason }) => {
+    const norm = roomCode?.trim().toUpperCase();
+    clearRoomTimer(norm);
+    completeGame(norm, winnerTeam, endReason);
+    const replay = getReplay(norm);
+    const finalLeaderboard = finalizeMatchScores(norm, winnerTeam);
+
+    io.to(norm).emit("game:finished", {
+      winnerTeam,
       endReason,
       replay,
-      leaderboard
+      leaderboard: finalLeaderboard
     });
   });
 
-  // 10. LEAVE ROOM
   socket.on("room:leave", async (callback) => {
     await handlePlayerLeave(socket);
     callback?.({ success: true });
   });
 
-  // 11. DISCONNECT
   socket.on("disconnect", async () => {
     await handlePlayerLeave(socket);
   });

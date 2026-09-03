@@ -1,4 +1,3 @@
-// Curated Challenge Repository with Easy, Medium, and Hard Difficulties
 
 export const CHALLENGES = {
   EASY: {

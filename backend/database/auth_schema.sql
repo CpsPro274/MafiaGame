@@ -1,7 +1,3 @@
--- ============================================================================
--- 1. AUTH & USER SCHEMA (auth_schema.sql)
--- Simple Login & Registration Table
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,

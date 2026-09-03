@@ -12,9 +12,11 @@ export default function Lobby(){
   const [loading, setLoading] = useState(false);
   const [connected, setConnected] = useState(false);
 
+  const savedName = sessionStorage.getItem("username") || localStorage.getItem("username") || "";
+
   const [createForm, setCreateForm] = useState({
     lobbyName: "",
-    playerName: "",
+    playerName: savedName,
     maxPlayers: 6,
     mafiaCount: 1,
     difficulty: "MEDIUM",
@@ -24,7 +26,7 @@ export default function Lobby(){
 
   const [joinForm, setJoinForm] = useState({
     lobbyCode: "",
-    playerName: "",
+    playerName: savedName,
   });
 
   useEffect(() => {
@@ -56,8 +58,6 @@ export default function Lobby(){
       socket.off("disconnect", handleDisconnect);
       socket.off("connect_error", handleConnectError);
 
-      // IMPORTANT:
-      // Do NOT call socket.disconnect() here.
     };
   }, []);
 
@@ -130,14 +130,10 @@ export default function Lobby(){
           "Room:",
           response.room
         );
-        localStorage.setItem(
-          "roomCode",
-          response.roomCode
-        );
-        localStorage.setItem(
-          "username",
-          response.player.username
-        );
+        sessionStorage.setItem("roomCode", response.roomCode);
+        sessionStorage.setItem("username", response.player.username);
+        localStorage.setItem("roomCode", response.roomCode);
+        localStorage.setItem("username", response.player.username);
         navigate(`/room/${response.roomCode}`);
       }
     );
@@ -192,19 +188,12 @@ export default function Lobby(){
           "Room:",
           response.room
         );
-        localStorage.setItem(
-          "roomCode",
-          response.roomCode
-        );
+        sessionStorage.setItem("roomCode", response.roomCode);
+        sessionStorage.setItem("username", response.player.username);
+        localStorage.setItem("roomCode", response.roomCode);
+        localStorage.setItem("username", response.player.username);
 
-        localStorage.setItem(
-          "username",
-          response.player.username
-        );
-
-        navigate(
-          `/room/${response.roomCode}`
-        );
+        navigate(`/room/${response.roomCode}`);
       }
     );
   };
@@ -465,6 +454,12 @@ export default function Lobby(){
                       handleCreateChange
                     }
                   >
+                    <option value="5">
+                      5 Minutes (Fast Match)
+                    </option>
+                    <option value="10">
+                      10 Minutes
+                    </option>
                     <option value="15">
                       15 Minutes
                     </option>

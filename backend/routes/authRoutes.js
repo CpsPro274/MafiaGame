@@ -5,14 +5,8 @@ import { query } from "../config/db.js";
 
 const router = express.Router();
 
-// In-memory fallback user store in case local PostgreSQL is disconnected/misconfigured
 const inMemoryUsers = new Map();
 
-/**
- * Register a new user
- * POST /api/auth/register
- * Body: { username, password }
- */
 router.post("/register", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -23,21 +17,17 @@ router.post("/register", async (req, res) => {
 
     const cleanUsername = username.trim();
 
-    // 1. Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
     let user = null;
 
-    // 2. Try saving to PostgreSQL
     try {
-      // Check existing in DB
       const existing = await query("SELECT id FROM users WHERE LOWER(username) = LOWER($1)", [cleanUsername]);
       if (existing.rows.length > 0) {
         return res.status(409).json({ error: "Username is already taken." });
       }
 
-      // Try insert
       let result;
       try {
         result = await query(
@@ -60,7 +50,6 @@ router.post("/register", async (req, res) => {
     } catch (dbErr) {
       console.warn("⚠️ PostgreSQL unavailable, using fast in-memory user store:", dbErr.message);
 
-      // Check existing in memory
       if (inMemoryUsers.has(cleanUsername.toLowerCase())) {
         return res.status(409).json({ error: "Username is already taken." });
       }
@@ -79,7 +68,6 @@ router.post("/register", async (req, res) => {
       console.log(`🧠 [In-Memory User Registered] Username: ${user.username}`);
     }
 
-    // 3. Generate JWT Token
     const token = jwt.sign(
       { id: user.id, username: user.username },
       process.env.JWT_SECRET || "default_jwt_secret",
@@ -104,11 +92,6 @@ router.post("/register", async (req, res) => {
   }
 });
 
-/**
- * Login user
- * POST /api/auth/login
- * Body: { username, password }
- */
 router.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -121,7 +104,6 @@ router.post("/login", async (req, res) => {
     let user = null;
     let storedPassword = null;
 
-    // 1. Try finding in PostgreSQL
     try {
       const result = await query("SELECT * FROM users WHERE LOWER(username) = LOWER($1)", [cleanUsername]);
       if (result.rows.length > 0) {
@@ -132,7 +114,6 @@ router.post("/login", async (req, res) => {
       console.warn("⚠️ PostgreSQL unavailable, searching in-memory store...");
     }
 
-    // 2. Check in-memory store fallback if not in DB
     if (!user && inMemoryUsers.has(cleanUsername.toLowerCase())) {
       user = inMemoryUsers.get(cleanUsername.toLowerCase());
       storedPassword = user.password;
@@ -142,13 +123,11 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid username or password." });
     }
 
-    // 3. Compare password
     const isMatch = await bcrypt.compare(password, storedPassword);
     if (!isMatch) {
       return res.status(401).json({ error: "Invalid username or password." });
     }
 
-    // 4. Generate JWT Token
     const token = jwt.sign(
       { id: user.id, username: user.username },
       process.env.JWT_SECRET || "default_jwt_secret",
@@ -175,10 +154,6 @@ router.post("/login", async (req, res) => {
   }
 });
 
-/**
- * Get user profile & career statistics
- * GET /api/auth/profile/:username
- */
 router.get("/profile/:username", async (req, res) => {
   try {
     const cleanUsername = req.params.username.trim();
@@ -193,7 +168,6 @@ router.get("/profile/:username", async (req, res) => {
       }
     } catch (_) {}
 
-    // Fallback to in-memory store
     if (inMemoryUsers.has(cleanUsername.toLowerCase())) {
       const u = inMemoryUsers.get(cleanUsername.toLowerCase());
       return res.json({

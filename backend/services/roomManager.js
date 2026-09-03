@@ -1,12 +1,8 @@
-// In-Memory Room Manager for Real-Time Rooms
 
-const rooms = new Map(); // Key: roomCode, Value: Room Object
+const rooms = new Map();
 
-/**
- * Generate a random 6-character uppercase alphanumeric room code
- */
 export function generateRoomCode() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Removed ambiguous chars (0, O, 1, I)
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
   do {
     code = "";
@@ -17,9 +13,6 @@ export function generateRoomCode() {
   return code;
 }
 
-/**
- * Create a new room with the creator as Host
- */
 export function createRoom(socketId, username, difficulty = "MEDIUM", maxPlayers = 8, extraOptions = {}) {
   const roomCode = extraOptions.roomCode || generateRoomCode();
 
@@ -27,7 +20,7 @@ export function createRoom(socketId, username, difficulty = "MEDIUM", maxPlayers
     socketId: socketId || null,
     username: username.trim(),
     isHost: true,
-    role: null, // Assigned on game start ('DEVELOPER' | 'MAFIA')
+    role: null,
     isAlive: true,
     joinedAt: Date.now()
   };
@@ -38,17 +31,31 @@ export function createRoom(socketId, username, difficulty = "MEDIUM", maxPlayers
       ? parsedMaxPlayers
       : 8;
 
+  let roundTimeLimit = 600;
+  if (extraOptions.timeLimit) {
+    const parsed = Number(extraOptions.timeLimit);
+    if (!isNaN(parsed) && parsed > 0) {
+      roundTimeLimit = parsed < 60 ? parsed * 60 : parsed;
+    }
+  }
+
   const room = {
     roomCode,
     name: extraOptions.name || extraOptions.roomName || extraOptions.lobbyName || `${username.trim()}'s Room`,
     hostSocketId: socketId || null,
     maxPlayers: validMaxPlayers,
-    difficulty: (difficulty || "MEDIUM").toUpperCase(), // 'EASY' | 'MEDIUM' | 'HARD'
-    status: "LOBBY", // 'LOBBY' | 'IN_PROGRESS' | 'FINISHED'
+    difficulty: (difficulty || "MEDIUM").toUpperCase(),
+    status: "LOBBY",
+    phase: "LOBBY",
     players: [hostPlayer],
     challengeId: extraOptions.challengeId || 1,
-    timeLimit: extraOptions.timeLimit ? Number(extraOptions.timeLimit) : 600, // 10 minutes default
-    mafiaCount: extraOptions.mafiaCount ? Number(extraOptions.mafiaCount) : 1,
+    timeLimit: roundTimeLimit,
+    sabotageDuration: 30,
+    votingDuration: 45,
+    phaseExpiresAt: null,
+    votes: {},
+    winnerTeam: null,
+    endReason: null,
     createdAt: Date.now()
   };
 
@@ -57,9 +64,6 @@ export function createRoom(socketId, username, difficulty = "MEDIUM", maxPlayers
   return { room, player: hostPlayer };
 }
 
-/**
- * Set Room Difficulty
- */
 export function setRoomDifficulty(roomCode, difficulty) {
   const room = rooms.get(roomCode.trim().toUpperCase());
   if (room) {
@@ -69,10 +73,6 @@ export function setRoomDifficulty(roomCode, difficulty) {
   return null;
 }
 
-/**
- * Join an existing room by code
- * Gracefully handles reconnects and auto-suffixes duplicate usernames
- */
 export function joinRoom(roomCode, socketId, username) {
   if (!roomCode || typeof roomCode !== "string") {
     return { error: "Room code is required.", status: 400 };
@@ -96,32 +96,43 @@ export function joinRoom(roomCode, socketId, username) {
     return { error: "Username is required.", status: 400 };
   }
 
-  // 1. Check if this is a reconnecting player (by username)
-  const existingPlayerByName = room.players.find(
-    (p) => p.username.toLowerCase() === finalUsername.toLowerCase()
-  );
+  if (room.status !== "LOBBY") {
+    const existingPlayerByName = room.players.find(
+      (p) => p.username.toLowerCase() === finalUsername.toLowerCase()
+    );
 
-  if (existingPlayerByName) {
-    if (socketId) {
-      existingPlayerByName.socketId = socketId;
+    if (existingPlayerByName) {
+      if (socketId) {
+        existingPlayerByName.socketId = socketId;
+      }
+      if (!room.hostSocketId && existingPlayerByName.isHost) {
+        room.hostSocketId = socketId || null;
+      }
+      console.log(`🔄 [Player Reconnected In-Match] ${finalUsername} rejoined Room: ${normalizedCode} (Role: ${existingPlayerByName.role})`);
+      return { room, player: existingPlayerByName, reconnected: true };
     }
-    if (!room.hostSocketId && existingPlayerByName.isHost) {
-      room.hostSocketId = socketId || null;
-    }
-    console.log(`🔄 [Player Reconnected] ${finalUsername} rejoined Room: ${normalizedCode} (Role: ${existingPlayerByName.role})`);
-    return { room, player: existingPlayerByName, reconnected: true };
+
+    return { error: "Match is already in progress in this room.", status: 409 };
   }
 
-  // 2. If room is in progress and player was not previously in room, reject
-  if (room.status !== "LOBBY") {
-    return { error: "Match is already in progress in this room.", status: 409 };
+  const existingPlayerBySocket = socketId ? room.players.find((p) => p.socketId === socketId) : null;
+  if (existingPlayerBySocket) {
+    if (finalUsername.toLowerCase() !== existingPlayerBySocket.username.toLowerCase()) {
+      let counter = 2;
+      const originalName = finalUsername;
+      while (room.players.some((p) => p.socketId !== socketId && p.username.toLowerCase() === finalUsername.toLowerCase())) {
+        finalUsername = `${originalName} (${counter})`;
+        counter++;
+      }
+      existingPlayerBySocket.username = finalUsername;
+    }
+    return { room, player: existingPlayerBySocket, reconnected: true };
   }
 
   if (room.players.length >= room.maxPlayers) {
     return { error: "Room is already full.", status: 409 };
   }
 
-  // 3. If username is taken, auto-assign friendly suffix
   let counter = 2;
   const originalName = finalUsername;
   while (room.players.some((p) => p.username.toLowerCase() === finalUsername.toLowerCase())) {
@@ -146,10 +157,6 @@ export function joinRoom(roomCode, socketId, username) {
   return { room, player: newPlayer };
 }
 
-/**
- * Leave current room (called explicitly or on socket disconnect)
- * Keeps rooms alive for 10 minutes so page refreshes don't wipe active lobbies
- */
 export function leaveRoom(socketId) {
   let targetRoomCode = null;
 
@@ -164,9 +171,17 @@ export function leaveRoom(socketId) {
 
   const room = rooms.get(targetRoomCode);
   const leftPlayer = room.players.find((p) => p.socketId === socketId);
+
+  if (room.status !== "LOBBY") {
+    if (leftPlayer) {
+      leftPlayer.socketId = null;
+      console.log(`🔌 [Player Disconnected In-Match] ${leftPlayer.username} left active room: ${targetRoomCode} (Can reconnect)`);
+    }
+    return { roomCode: targetRoomCode, room, leftPlayer, roomDeleted: false };
+  }
+
   room.players = room.players.filter((p) => p.socketId !== socketId);
 
-  // If room becomes empty, keep it alive for 10 minutes (prevents accidental delete on page reload)
   if (room.players.length === 0) {
     setTimeout(() => {
       const r = rooms.get(targetRoomCode);
@@ -179,7 +194,6 @@ export function leaveRoom(socketId) {
     return { roomCode: targetRoomCode, roomDeleted: false, leftPlayer };
   }
 
-  // If host left, pass host to next player
   if (room.hostSocketId === socketId && room.players.length > 0) {
     room.players[0].isHost = true;
     room.hostSocketId = room.players[0].socketId;
@@ -188,9 +202,6 @@ export function leaveRoom(socketId) {
   return { roomCode: targetRoomCode, room, leftPlayer, roomDeleted: false };
 }
 
-/**
- * Start Match & Secretly Assign Roles
- */
 export function startGame(roomCode, hostSocketId) {
   const room = rooms.get(roomCode.trim().toUpperCase());
 
@@ -202,7 +213,6 @@ export function startGame(roomCode, hostSocketId) {
     return { error: "Only the room host can start the game." };
   }
 
-  // Assign Mafia (at least 1 Mafia)
   const mafiaCount = Math.max(1, Math.floor(room.players.length / 3));
   const shuffled = [...room.players].sort(() => 0.5 - Math.random());
 
@@ -214,21 +224,144 @@ export function startGame(roomCode, hostSocketId) {
   });
 
   room.status = "IN_PROGRESS";
+  room.phase = "SABOTAGE";
+  room.sabotageDuration = 30;
+  room.votingDuration = 45;
   room.startedAt = Date.now();
+  room.phaseExpiresAt = Date.now() + room.sabotageDuration * 1000;
+  room.votes = {};
+  room.winnerTeam = null;
+  room.endReason = null;
 
   return { room };
 }
 
-/**
- * Get room state by code
- */
+export function advanceToDebugPhase(roomCode) {
+  const room = rooms.get(roomCode.trim().toUpperCase());
+  if (!room || room.status === "FINISHED") return null;
+
+  room.phase = "DEBUG";
+  room.phaseExpiresAt = Date.now() + (room.timeLimit || 600) * 1000;
+  return room;
+}
+
+export function advanceToVotingPhase(roomCode) {
+  const room = rooms.get(roomCode.trim().toUpperCase());
+  if (!room || room.status === "FINISHED") return null;
+
+  room.phase = "VOTING";
+  room.votingDuration = 45;
+  room.phaseExpiresAt = Date.now() + room.votingDuration * 1000;
+  room.votes = {};
+  return room;
+}
+
+export function recordVote(roomCode, voterName, targetUsername) {
+  const room = rooms.get(roomCode.trim().toUpperCase());
+  if (!room || room.phase !== "VOTING") return null;
+
+  const voter = room.players.find((p) => p.username.toLowerCase() === voterName.toLowerCase());
+  if (!voter || !voter.isAlive) return null;
+
+  room.votes = room.votes || {};
+  room.votes[voter.username] = targetUsername;
+
+  const alivePlayers = room.players.filter((p) => p.isAlive);
+  const allVoted = alivePlayers.length > 0 && alivePlayers.every((p) => room.votes[p.username] !== undefined);
+
+  return { room, votes: room.votes, allVoted };
+}
+
+export function tallyVotesAndEvaluate(roomCode) {
+  const room = rooms.get(roomCode.trim().toUpperCase());
+  if (!room) return null;
+
+  const voteCounts = {};
+  const voters = Object.keys(room.votes || {});
+
+  voters.forEach((voter) => {
+    const target = room.votes[voter];
+    if (target && target !== "SKIP") {
+      voteCounts[target] = (voteCounts[target] || 0) + 1;
+    }
+  });
+
+  let maxVotes = 0;
+  let candidatesWithMax = [];
+  for (const [target, count] of Object.entries(voteCounts)) {
+    if (count > maxVotes) {
+      maxVotes = count;
+      candidatesWithMax = [target];
+    } else if (count === maxVotes) {
+      candidatesWithMax.push(target);
+    }
+  }
+
+  let ejectedPlayer = null;
+  let wasMafia = false;
+
+  if (candidatesWithMax.length === 1 && maxVotes > 0) {
+    const targetName = candidatesWithMax[0];
+    ejectedPlayer = room.players.find((p) => p.username.toLowerCase() === targetName.toLowerCase());
+    if (ejectedPlayer && ejectedPlayer.isAlive) {
+      ejectedPlayer.isAlive = false;
+      wasMafia = ejectedPlayer.role === "MAFIA";
+    } else {
+      ejectedPlayer = null;
+    }
+  }
+
+  const aliveMafia = room.players.filter((p) => p.isAlive && p.role === "MAFIA").length;
+  const aliveDevs = room.players.filter((p) => p.isAlive && p.role === "DEVELOPER").length;
+
+  let winnerTeam = null;
+  let endReason = null;
+
+  if (aliveMafia === 0) {
+    winnerTeam = "DEVELOPERS";
+    endReason = "All Imposters have been voted out! Developers win!";
+  } else if (aliveMafia >= aliveDevs) {
+    winnerTeam = "MAFIA";
+    endReason = `The Imposters have equaled or outnumbered the Developers (${aliveMafia} vs ${aliveDevs})! Mafia wins!`;
+  } else {
+    winnerTeam = "MAFIA";
+    endReason = "Debugging round expired and the Imposter survived the voting tribunal! Mafia wins!";
+  }
+
+  if (winnerTeam) {
+    room.status = "FINISHED";
+    room.phase = "FINISHED";
+    room.winnerTeam = winnerTeam;
+    room.endReason = endReason;
+  }
+
+  return {
+    room,
+    ejectedPlayer,
+    wasMafia,
+    winnerTeam,
+    endReason,
+    aliveMafia,
+    aliveDevs,
+    votes: room.votes
+  };
+}
+
+export function completeGame(roomCode, winnerTeam, endReason) {
+  const room = rooms.get(roomCode.trim().toUpperCase());
+  if (!room) return null;
+
+  room.status = "FINISHED";
+  room.phase = "FINISHED";
+  room.winnerTeam = winnerTeam;
+  room.endReason = endReason;
+  return room;
+}
+
 export function getRoom(roomCode) {
   return rooms.get(roomCode.trim().toUpperCase());
 }
 
-/**
- * Get room by socket ID
- */
 export function getRoomBySocketId(socketId) {
   for (const room of rooms.values()) {
     if (room.players.some((p) => p.socketId === socketId)) {
@@ -238,9 +371,6 @@ export function getRoomBySocketId(socketId) {
   return null;
 }
 
-/**
- * Get all active rooms
- */
 export function getAllRooms() {
   return Array.from(rooms.values());
 }

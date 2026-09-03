@@ -46,11 +46,12 @@ export default function AuthPage() {
       const resp = await api.post(endpoint, payload, { withCredentials: true });
 
       if (resp.data?.token) {
+        sessionStorage.setItem("token", resp.data.token);
         localStorage.setItem("token", resp.data.token);
       }
 
-      // Store username for room sessions & multiplayer
       const usernameToSave = resp.data?.user?.username || cleanUsername;
+      sessionStorage.setItem("username", usernameToSave);
       localStorage.setItem("username", usernameToSave);
 
       navigate("/lobby");

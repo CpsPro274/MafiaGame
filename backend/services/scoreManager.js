@@ -1,10 +1,6 @@
-// Points, XP & Leaderboard Score Manager
 
-const roomScores = new Map(); // Key: roomCode, Value: Map of username -> { xp, testsFixed, sabotagesPlanted, votesCorrect, role }
+const roomScores = new Map();
 
-/**
- * Initialize player score cards when a match starts
- */
 export function initScores(roomCode, players) {
   const normalized = roomCode.trim().toUpperCase();
   const playerMap = new Map();
@@ -25,9 +21,6 @@ export function initScores(roomCode, players) {
   console.log(`🏆 [Scores Initialized] Room: ${normalized} with ${players.length} players`);
 }
 
-/**
- * Award XP points to a player for in-game achievements
- */
 export function awardPoints(roomCode, username, points, reason) {
   const normalized = roomCode.trim().toUpperCase();
   const playerMap = roomScores.get(normalized);
@@ -46,9 +39,30 @@ export function awardPoints(roomCode, username, points, reason) {
   return { player, allScores: Array.from(playerMap.values()) };
 }
 
-/**
- * Get current room leaderboard sorted by XP
- */
+export function finalizeMatchScores(roomCode, winnerTeam) {
+  const normalized = roomCode.trim().toUpperCase();
+  const playerMap = roomScores.get(normalized);
+  if (!playerMap) return [];
+
+  playerMap.forEach((player) => {
+    const isWinner =
+      (winnerTeam === "DEVELOPERS" && player.role === "DEVELOPER") ||
+      (winnerTeam === "MAFIA" && player.role === "MAFIA");
+
+    if (isWinner) {
+      const victoryBonus = player.role === "MAFIA" ? 500 : 300;
+      player.xp += victoryBonus;
+      player.won = true;
+    } else {
+      player.xp = 0;
+      player.won = false;
+    }
+  });
+
+  console.log(`🏁 [Scores Finalized] Room: ${normalized} (Winner: ${winnerTeam})`);
+  return Array.from(playerMap.values()).sort((a, b) => b.xp - a.xp);
+}
+
 export function getLeaderboard(roomCode) {
   const normalized = roomCode.trim().toUpperCase();
   const playerMap = roomScores.get(normalized);
