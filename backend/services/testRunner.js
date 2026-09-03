@@ -2,8 +2,6 @@ import { executeCode } from './codeRunner.js';
 
 async function runAllTests() {
   console.log('--- Starting Code Runner Tests ---\n');
-
-  // Test Case 1: Valid fixed code that passes all unit tests
   console.log('[Test 1] Running valid Python code (Expected: passed)...');
   const passPayload = {
     submission_id: 'test_pass_001',

@@ -1,1 +1,1 @@
-express dockerode uuid
+express dockerode uuid socket.io yjs y-websocket
