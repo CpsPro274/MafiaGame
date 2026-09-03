@@ -115,6 +115,18 @@ export default function MonacoEditorPage() {
   const [ejectionResult, setEjectionResult] = useState(null);
   const [victoryData, setVictoryData] = useState(null);
 
+  // Tactical Sabotage & Powerup states
+  const [isGlitched, setIsGlitched] = useState(false);
+  const [isFalseGreen, setIsFalseGreen] = useState(false);
+  const [isFunctionLocked, setIsFunctionLocked] = useState(false);
+  const [sabotageBanner, setSabotageBanner] = useState("");
+  const [cooldowns, setCooldowns] = useState({
+    SCREEN_GLITCH: 0,
+    FALSE_GREEN: 0,
+    FUNCTION_LOCK: 0,
+    CODE_RADAR: 0
+  });
+
   /*
    * Countdown Timer
    */
@@ -224,6 +236,59 @@ export default function MonacoEditorPage() {
       setTimeout(() => {
         isRemoteUpdate.current = false;
       }, 50);
+    });
+
+    socket.on("test:result", ({ passed, details, author, results }) => {
+      console.log(`[Test Sync] Live test result from ${author}:`, passed);
+      setAllTestsPassed(passed);
+
+      if (results && Array.isArray(results)) {
+        setTestCases(
+          results.map((r, idx) => ({
+            id: idx + 1,
+            name: `Test Case ${idx + 1}`,
+            input: testCases[idx]?.input || { test: idx + 1 },
+            expected: r.expected,
+            actual: r.actual,
+            status: r.passed ? "PASSED" : "FAILED",
+            passed: r.passed
+          }))
+        );
+      } else {
+        setTestCases((prev) =>
+          prev.map((tc) => ({
+            ...tc,
+            status: passed ? "PASSED" : "FAILED",
+            passed
+          }))
+        );
+      }
+
+      setAuditLogs((prev) => [
+        ...prev,
+        {
+          author: author || "Operative",
+          action: passed ? "Ran test suite (All Passed)" : "Ran test suite (Failed)",
+          time: new Date().toLocaleTimeString()
+        }
+      ]);
+    });
+
+    socket.on("sabotage:effect", ({ type, durationSec = 6, message }) => {
+      setSabotageBanner(message || "Tactical Sabotage Triggered!");
+
+      if (type === "SCREEN_GLITCH") {
+        setIsGlitched(true);
+        setTimeout(() => setIsGlitched(false), (durationSec || 6) * 1000);
+      } else if (type === "FALSE_GREEN") {
+        setIsFalseGreen(true);
+        setTimeout(() => setIsFalseGreen(false), (durationSec || 15) * 1000);
+      } else if (type === "FUNCTION_LOCK") {
+        setIsFunctionLocked(true);
+        setTimeout(() => setIsFunctionLocked(false), (durationSec || 10) * 1000);
+      }
+
+      setTimeout(() => setSabotageBanner(""), (durationSec || 6) * 1000);
     });
 
     /*
@@ -983,6 +1048,31 @@ export default function MonacoEditorPage() {
     );
   };
 
+  const handleTriggerPowerup = (ability) => {
+    if (cooldowns[ability] > 0) return;
+
+    setCooldowns((prev) => ({ ...prev, [ability]: 15 }));
+
+    const timer = setInterval(() => {
+      setCooldowns((prev) => {
+        if (prev[ability] <= 1) {
+          clearInterval(timer);
+          return { ...prev, [ability]: 0 };
+        }
+        return { ...prev, [ability]: prev[ability] - 1 };
+      });
+    }, 1000);
+
+    if (socketRef.current) {
+      socketRef.current.emit("sabotage:trigger", {
+        roomCode,
+        ability,
+        senderName: username,
+        senderRole: playerRole
+      });
+    }
+  };
+
   /*
    * ==========================================
    * LANGUAGE CHANGE
@@ -1107,7 +1197,9 @@ export default function MonacoEditorPage() {
   const passedCount = testCases.filter((t) => t.status === "PASSED").length;
 
   return (
-    <div className={styles.editorWrapper}>
+    <div className={`${styles.editorWrapper} ${isGlitched ? styles.glitchActive : ""}`}>
+      {isGlitched && <div className={styles.glitchOverlay} />}
+
       {/* ==================== TOP BAR ==================== */}
       <header className={styles.topBar}>
         <div className={styles.leftControls}>
@@ -1140,7 +1232,7 @@ export default function MonacoEditorPage() {
             type="button"
             className={styles.runBtn}
             onClick={() => runCode(false)}
-            disabled={isRunning}
+            disabled={isRunning || isFunctionLocked}
           >
             <PlayCircle size={15} />
             {isRunning ? "Running..." : "Run"}
@@ -1150,8 +1242,8 @@ export default function MonacoEditorPage() {
             type="button"
             className={styles.submitBtn}
             onClick={() => runCode(true)}
-            disabled={isRunning || !allTestsPassed}
-            title={!allTestsPassed ? "All test cases must pass before submitting" : "Submit Solution"}
+            disabled={isRunning || (!allTestsPassed && !isFalseGreen) || isFunctionLocked}
+            title={!allTestsPassed && !isFalseGreen ? "All test cases must pass before submitting" : "Submit Solution"}
           >
             <Send size={14} />
             {isRunning ? "Submitting..." : "Submit"}
@@ -1162,6 +1254,12 @@ export default function MonacoEditorPage() {
       {/* ==================== MAIN LAYOUT ==================== */}
       <main className={styles.mainLayout}>
         <div className={styles.editorColumn}>
+          {isFunctionLocked && (
+            <div className={styles.functionLockBanner}>
+              🔒 FUNCTION LOCKED: Lines 4-8 frozen by Mafia Sabotage!
+            </div>
+          )}
+
           {challenge && (
             <section className={styles.challengePanel}>
               <h1>{challenge.title || "Shopping Cart Discount Engine"}</h1>
@@ -1169,7 +1267,7 @@ export default function MonacoEditorPage() {
               <div className={styles.challengeMeta}>
                 <span>Language: {language}</span>
                 <span>Role: {playerRole}</span>
-                <span>Status: {allTestsPassed ? "ALL TESTS PASSED" : "PENDING FIX"}</span>
+                <span>Status: {allTestsPassed || isFalseGreen ? "ALL TESTS PASSED" : "PENDING FIX"}</span>
               </div>
             </section>
           )}
@@ -1190,63 +1288,127 @@ export default function MonacoEditorPage() {
                 tabSize: 2,
                 wordWrap: "on",
                 lineNumbers: "on",
+                readOnly: isFunctionLocked
               }}
             />
           </div>
         </div>
 
-        {/* ==================== RIGHT SIDE TEST CASES PANEL (NO EMOJIS) ==================== */}
+        {/* ==================== RIGHT SIDE TEST CASES PANEL ==================== */}
         <aside className={styles.testSidePanel}>
           <div className={styles.testSideHeader}>
             <h3 className={styles.testSideTitle}>Test Cases</h3>
             <span className={styles.testSummaryBadge}>
-              {passedCount} / {testCases.length} Passed
+              {isFalseGreen ? testCases.length : passedCount} / {testCases.length} Passed
             </span>
           </div>
 
           <div className={styles.testList}>
-            {testCases.map((test, index) => (
-              <div key={test.id || index} className={styles.testCard}>
-                <div className={styles.testCardHeader}>
-                  <span className={styles.testName}>{test.name}</span>
-                  <span
-                    className={
-                      test.status === "PASSED"
-                        ? styles.badgePassed
-                        : test.status === "FAILED"
-                        ? styles.badgeFailed
-                        : styles.badgePending
-                    }
-                  >
-                    {test.status || "NOT RUN"}
-                  </span>
-                </div>
-
-                <div className={styles.testDetailRow}>
-                  <span className={styles.testLabel}>Input:</span>
-                  <pre className={styles.testCode}>{JSON.stringify(test.input, null, 2)}</pre>
-                </div>
-
-                <div className={styles.testDetailRow}>
-                  <span className={styles.testLabel}>Expected:</span>
-                  <pre className={styles.testCode}>{JSON.stringify(test.expected, null, 2)}</pre>
-                </div>
-
-                {test.actual !== undefined && (
-                  <div className={styles.testDetailRow}>
-                    <span className={styles.testLabel}>Actual:</span>
-                    <pre
-                      className={`${styles.testCode} ${
-                        test.status === "PASSED" ? styles.codeSuccess : styles.codeError
-                      }`}
+            {testCases.map((test, index) => {
+              const displayPassed = isFalseGreen || test.status === "PASSED";
+              return (
+                <div key={test.id || index} className={styles.testCard}>
+                  <div className={styles.testCardHeader}>
+                    <span className={styles.testName}>{test.name}</span>
+                    <span
+                      className={
+                        displayPassed
+                          ? styles.badgePassed
+                          : test.status === "FAILED"
+                          ? styles.badgeFailed
+                          : styles.badgePending
+                      }
                     >
-                      {JSON.stringify(test.actual, null, 2)}
-                    </pre>
+                      {displayPassed ? "PASSED" : test.status || "NOT RUN"}
+                    </span>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  <div className={styles.testDetailRow}>
+                    <span className={styles.testLabel}>Input:</span>
+                    <pre className={styles.testCode}>{JSON.stringify(test.input, null, 2)}</pre>
+                  </div>
+
+                  <div className={styles.testDetailRow}>
+                    <span className={styles.testLabel}>Expected:</span>
+                    <pre className={styles.testCode}>{JSON.stringify(test.expected, null, 2)}</pre>
+                  </div>
+
+                  {(test.actual !== undefined || isFalseGreen) && (
+                    <div className={styles.testDetailRow}>
+                      <span className={styles.testLabel}>Actual:</span>
+                      <pre
+                        className={`${styles.testCode} ${
+                          displayPassed ? styles.codeSuccess : styles.codeError
+                        }`}
+                      >
+                        {JSON.stringify(isFalseGreen ? test.expected : test.actual, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
+
+          {/* ==================== DEDICATED MAFIA TACTICAL POWERUPS PANEL ==================== */}
+          {playerRole === "MAFIA" && (
+            <section className={styles.mafiaPanel}>
+              <div className={styles.mafiaHeader}>
+                <h4 className={styles.mafiaTitle}>Mafia Powerups</h4>
+                <span className={styles.mafiaBadge}>ROLE: MAFIA</span>
+              </div>
+
+              <div className={styles.powerupGrid}>
+                <button
+                  type="button"
+                  className={styles.powerupBtn}
+                  onClick={() => handleTriggerPowerup("SCREEN_GLITCH")}
+                  disabled={cooldowns.SCREEN_GLITCH > 0}
+                >
+                  <span>Screen Glitch</span>
+                  <span className={styles.powerupDesc}>
+                    {cooldowns.SCREEN_GLITCH > 0 ? `${cooldowns.SCREEN_GLITCH}s` : "Glitch Displays (6s)"}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className={styles.powerupBtn}
+                  onClick={() => handleTriggerPowerup("FALSE_GREEN")}
+                  disabled={cooldowns.FALSE_GREEN > 0}
+                >
+                  <span>False Green</span>
+                  <span className={styles.powerupDesc}>
+                    {cooldowns.FALSE_GREEN > 0 ? `${cooldowns.FALSE_GREEN}s` : "Fake Passed (15s)"}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className={styles.powerupBtn}
+                  onClick={() => handleTriggerPowerup("FUNCTION_LOCK")}
+                  disabled={cooldowns.FUNCTION_LOCK > 0}
+                >
+                  <span>Freeze Editor</span>
+                  <span className={styles.powerupDesc}>
+                    {cooldowns.FUNCTION_LOCK > 0 ? `${cooldowns.FUNCTION_LOCK}s` : "Lock Code (10s)"}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className={styles.powerupBtn}
+                  onClick={() => handleTriggerPowerup("CODE_RADAR")}
+                  disabled={cooldowns.CODE_RADAR > 0}
+                >
+                  <span>Code Radar</span>
+                  <span className={styles.powerupDesc}>
+                    {cooldowns.CODE_RADAR > 0 ? `${cooldowns.CODE_RADAR}s` : "Scan Heatmap (8s)"}
+                  </span>
+                </button>
+              </div>
+            </section>
+          )}
         </aside>
       </main>
 

@@ -1,137 +1,158 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import PixelTrail from '../components/PixelTrail.jsx';
-import api from '../api/api.js';
+import PixelTrail from "../components/PixelTrail.jsx";
+import api from "../api/api.js";
 import AnimatedLogo from "../components/AnimatedLogo.jsx";
 import styles from "./styles/Login.module.css";
 
-function Register() {
-    const [data, setData] = useState({
-        username: "",
-        email: "",
-        password: "",
-    });
-    const [error, setError] = useState("");
-    const [loading, setLoading] = useState(false);
-    const navigate = useNavigate();
+export default function AuthPage() {
+  const [isLogin, setIsLogin] = useState(true);
+  const [data, setData] = useState({
+    username: "",
+    email: "",
+    password: "",
+  });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
-    function handleChange(e) {
-        setData({ ...data, [e.target.name]: e.target.value });
+  function handleChange(e) {
+    setData({ ...data, [e.target.name]: e.target.value });
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+
+    const cleanUsername = data.username.trim();
+
+    if (!cleanUsername) {
+      setError("Username is required");
+      return;
+    }
+    if (!data.password.trim()) {
+      setError("Password is required");
+      return;
     }
 
-    async function handleRegister(e) {
-        e.preventDefault();
-        setError("");
+    try {
+      setLoading(true);
+      const endpoint = isLogin ? "/auth/login" : "/auth/register";
 
-        if (!data.username.trim()) {
-            setError("Username is required");
-            return;
-        }
-        if (!data.email.trim()) {
-            setError("Email is required");
-            return;
-        }
-        if (!data.password.trim()) {
-            setError("Password is required");
-            return;
-        }
-        if (data.password.length < 6) {
-            setError("Password must be at least 6 characters");
-            return;
-        }
+      const payload = isLogin
+        ? { username: cleanUsername, password: data.password }
+        : { username: cleanUsername, email: data.email.trim(), password: data.password };
 
-        try {
-            setLoading(true);
-            const resp = await api.post(
-                "/auth/register",
-                {
-                    username: data.username.trim(),
-                    email: data.email.trim(),
-                    password: data.password,
-                },
-                { withCredentials: true }
-            );
+      const resp = await api.post(endpoint, payload, { withCredentials: true });
 
-            if (resp.data?.token) {
-                localStorage.setItem("token", resp.data.token);
-            }
+      if (resp.data?.token) {
+        localStorage.setItem("token", resp.data.token);
+      }
 
-            navigate("/home");
-        } catch (err) {
-            console.log("Registration Error Occurred: ", err);
-            const backendMessage = err.response?.data?.error;
-            setError(backendMessage || "Registration Failed");
-        } finally {
-            setLoading(false);
-        }
+      // Store username for room sessions & multiplayer
+      const usernameToSave = resp.data?.user?.username || cleanUsername;
+      localStorage.setItem("username", usernameToSave);
+
+      navigate("/lobby");
+    } catch (err) {
+      console.error("Auth Error:", err);
+      const backendMessage = err.response?.data?.error || err.response?.data?.message;
+      setError(backendMessage || (isLogin ? "Login failed. Check your credentials." : "Registration failed. Username may be taken."));
+    } finally {
+      setLoading(false);
     }
+  }
 
-    return (
-        <div className={styles.container}>
-            <div className={styles.leftSection}>
-                <PixelTrail
-                    gridSize={50}
-                    trailSize={0.1}
-                    maxAge={250}
-                    interpolate={5}
-                    color="#7F77DD"
-                    gooeyFilter={{ id: "custom-goo-filter", strength: 2 }}
-                    gooeyEnabled
-                    gooStrength={2}
-                />
-                <div className={styles.left}>
-                    <div className={styles.logo}>
-                        <AnimatedLogo />
-                    </div>
-                    <h1>Welcome</h1>
-                </div>
-            </div>
-            <div className={styles.rightSection}>
-                <div className={styles.box}>
-                    <h1 className={styles.title}>Register</h1>
-                    <p className={styles.subtitle}>Create an account to continue</p>
-
-                    <div className={styles.form}>
-                        <input
-                            type="text"
-                            name="username"
-                            placeholder="Username"
-                            value={data.username}
-                            onChange={handleChange}
-                            className={styles.loginInput}
-                        />
-                        <input
-                            type="email"
-                            name="email"
-                            placeholder="Email"
-                            value={data.email}
-                            onChange={handleChange}
-                            className={styles.loginInput}
-                        />
-                        <input
-                            type="password"
-                            name="password"
-                            placeholder="Password"
-                            value={data.password}
-                            onChange={handleChange}
-                            className={styles.loginInput}
-                        />
-                        <button
-                            className={styles.btn}
-                            onMouseEnter={e => e.target.style.background = "#776bfc"}
-                            onMouseLeave={e => e.target.style.background = "#594bf9"}
-                            onClick={handleRegister}
-                            disabled={loading}
-                        >
-                            {loading ? "Loading..." : "Register"}
-                        </button>
-                    </div>
-
-                    {error && <p className={styles.error}>{error}</p>}
-                </div>
-            </div>
+  return (
+    <div className={styles.container}>
+      <div className={styles.leftSection}>
+        <PixelTrail
+          gridSize={50}
+          trailSize={0.1}
+          maxAge={250}
+          interpolate={5}
+          color="#2563eb"
+          gooeyFilter={{ id: "custom-goo-filter", strength: 2 }}
+          gooeyEnabled
+          gooStrength={2}
+        />
+        <div className={styles.left}>
+          <div className={styles.logo}>
+            <AnimatedLogo />
+          </div>
+          <h1>Code Mafia</h1>
+          <p style={{ color: "var(--muted-foreground)", fontSize: "0.9rem", marginTop: "4px" }}>
+            The Ultimate Social Deduction Coding Game
+          </p>
         </div>
-    );
-}
+      </div>
 
-export default Register;
+      <div className={styles.rightSection}>
+        <div className={styles.box}>
+          <h1 className={styles.title}>{isLogin ? "Sign In" : "Create Account"}</h1>
+          <p className={styles.subtitle}>
+            {isLogin ? "Welcome back! Enter your details to continue." : "Register to start playing Code Mafia with your team."}
+          </p>
+
+          <form className={styles.form} onSubmit={handleSubmit}>
+            <input
+              type="text"
+              name="username"
+              placeholder="Username"
+              value={data.username}
+              onChange={handleChange}
+              className={styles.loginInput}
+              autoComplete="username"
+            />
+
+            {!isLogin && (
+              <input
+                type="email"
+                name="email"
+                placeholder="Email Address"
+                value={data.email}
+                onChange={handleChange}
+                className={styles.loginInput}
+                autoComplete="email"
+              />
+            )}
+
+            <input
+              type="password"
+              name="password"
+              placeholder="Password"
+              value={data.password}
+              onChange={handleChange}
+              className={styles.loginInput}
+              autoComplete={isLogin ? "current-password" : "new-password"}
+            />
+
+            <button
+              type="submit"
+              className={styles.btn}
+              disabled={loading}
+            >
+              {loading ? "Please wait..." : isLogin ? "Login" : "Register"}
+            </button>
+          </form>
+
+          {error && <p className={styles.error}>{error}</p>}
+
+          <div className={styles.switch}>
+            {isLogin ? (
+              <>
+                Don't have an account?{" "}
+                <span onClick={() => { setIsLogin(false); setError(""); }}>Register now</span>
+              </>
+            ) : (
+              <>
+                Already have an account?{" "}
+                <span onClick={() => { setIsLogin(true); setError(""); }}>Login here</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

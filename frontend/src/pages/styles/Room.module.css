@@ -1,315 +1,213 @@
 .page {
   min-height: 100vh;
-  position: relative;
-  overflow: hidden;
-  background-color: hsl(var(--background));
-  color: hsl(var(--foreground));
-  font-family: 'Inter', system-ui, sans-serif;
-}
-
-.gridBackground {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.5;
-  background-image:
-    linear-gradient(hsl(var(--border)) 1px, transparent 1px),
-    linear-gradient(90deg, hsl(var(--border)) 1px, transparent 1px);
-  background-size: 40px 40px;
-  mask-image: linear-gradient(to bottom, black, transparent 90%);
+  background-color: #ffffff;
+  color: #0f172a;
 }
 
 .navbar {
-  height: 64px;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 6%;
-  border-bottom: 1px solid hsl(var(--border));
-  background: hsl(var(--background) / 0.95);
-  backdrop-filter: blur(12px);
-  position: relative;
-  z-index: 5;
+  padding: 0 5%;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #ffffff;
 }
 
 .brand h1 {
   margin: 0;
-  font-size: 1.25rem;
-  letter-spacing: -0.02em;
+  font-size: 1.1rem;
   font-weight: 700;
-  color: hsl(var(--foreground));
+  color: #0f172a;
 }
 
 .container {
-  width: min(800px, 90%);
+  width: min(760px, 90%);
   margin: 0 auto;
-  padding: 48px 0;
-  position: relative;
-  z-index: 2;
+  padding: 40px 0;
 }
 
 .hero {
   text-align: center;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 
 .hero h2 {
-  margin: 0 0 8px;
-  font-size: clamp(2rem, 4vw, 2.5rem);
-  line-height: 1.1;
-  letter-spacing: -0.03em;
+  margin: 0 0 6px;
+  font-size: 2rem;
   font-weight: 700;
+  color: #0f172a;
 }
 
 .heroSubtitle {
   margin: 0;
-  color: hsl(var(--muted-foreground));
-  font-size: 0.95rem;
+  color: #64748b;
+  font-size: 0.9rem;
 }
 
 .roomCard {
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  background-color: hsl(var(--card));
-  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.05);
-  padding: 2rem;
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-              border-color 0.3s ease,
-              box-shadow 0.3s ease;
-}
-
-.roomCard:hover {
-  border-color: hsl(var(--primary));
-  box-shadow: 0 16px 32px -10px rgba(82, 39, 255, 0.18), 
-              0 0 0 1px hsl(var(--primary) / 0.3),
-              0 4px 12px -2px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background-color: #f8fafc;
+  padding: 24px;
 }
 
 .headerRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding-bottom: 1.5rem;
-  margin-bottom: 1.5rem;
-  border-bottom: 1px solid hsl(var(--border));
+  gap: 16px;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
   flex-wrap: wrap;
 }
 
 .developerCount {
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.developerCount h3 {
-  margin: 0;
-  font-size: 1.25rem;
+  gap: 8px;
+  font-size: 0.88rem;
   font-weight: 600;
+  color: #0f172a;
 }
 
-.countBadge {
-  padding: 4px 12px;
+.badge {
+  padding: 4px 10px;
   border-radius: 999px;
-  background-color: hsl(var(--muted));
-  border: 1px solid hsl(var(--border));
-  color: hsl(var(--foreground));
-  font-size: 0.85rem;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  font-size: 0.8rem;
   font-weight: 600;
+  color: #0f172a;
 }
 
-.codeBox {
+.roomCodeBox {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 14px;
-  background-color: hsl(var(--background));
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  transition: border-color 0.2s ease;
-}
-
-.codeBox:hover {
-  border-color: hsl(var(--primary));
 }
 
 .codeLabel {
   font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: hsl(var(--muted-foreground));
   font-weight: 600;
+  text-transform: uppercase;
+  color: #64748b;
 }
 
-.codeValue {
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 1.125rem;
+.codeBadge {
+  font-family: monospace;
+  font-size: 1.1rem;
   font-weight: 700;
-  letter-spacing: 0.15em;
-  color: hsl(var(--foreground));
+  padding: 4px 10px;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  letter-spacing: 0.05em;
+  color: #0f172a;
 }
 
 .copyBtn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 4px 8px;
-  background: transparent;
-  border: 1px solid hsl(var(--border));
-  border-radius: calc(var(--radius) - 2px);
-  color: hsl(var(--muted-foreground));
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #0f172a;
+  font-size: 0.8rem;
   cursor: pointer;
-  font-size: 0.75rem;
-  transition: all 0.2s ease;
 }
 
 .copyBtn:hover {
-  background-color: hsl(var(--muted));
-  color: hsl(var(--foreground));
-  border-color: hsl(var(--foreground));
+  border-color: #2563eb;
+  color: #2563eb;
 }
 
-.playersSection {
-  margin-bottom: 2rem;
+.playerSection {
+  margin-bottom: 24px;
 }
 
-.playersSectionTitle {
-  margin: 0 0 1rem;
-  font-size: 0.875rem;
-  font-weight: 600;
+.sectionTitle {
+  font-size: 0.8rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: hsl(var(--muted-foreground));
+  color: #64748b;
+  margin-bottom: 12px;
 }
 
 .playerGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
 }
 
 .playerCard {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  background-color: hsl(var(--background));
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.playerCard:hover {
-  transform: translateY(-2px);
-  border-color: hsl(var(--primary));
-  box-shadow: 0 4px 12px -2px rgba(82, 39, 255, 0.12);
-}
-
-.playerInfo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.playerDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: #22c55e;
-  box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
-}
-
-.playerName {
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: hsl(var(--foreground));
+  padding: 10px 14px;
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: #0f172a;
 }
 
 .hostTag {
   font-size: 0.7rem;
   font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background-color: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  letter-spacing: 0.05em;
+  color: #2563eb;
 }
 
-.emptySlot {
+.actionRow {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 12px 16px;
-  background-color: transparent;
-  border: 1px dashed hsl(var(--border));
-  border-radius: var(--radius);
-  color: hsl(var(--muted-foreground));
-  font-size: 0.875rem;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 24px;
 }
 
-.actionsRow {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.startButton {
-  width: 100%;
-  height: 48px;
-  display: flex;
+.startBtn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid hsl(var(--primary));
-  border-radius: var(--radius);
-  background-color: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  font-size: 1rem;
+  height: 40px;
+  padding: 0 24px;
+  background-color: #2563eb;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
-  transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease;
 }
 
-.startButton:hover:not(:disabled) {
-  opacity: 0.95;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px -4px rgba(82, 39, 255, 0.4);
+.startBtn:hover:not(:disabled) {
+  background-color: #1d4ed8;
 }
 
-.startButton:disabled {
+.startBtn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.secondaryActions {
-  display: flex;
-  gap: 12px;
-}
-
-.leaveButton {
-  flex: 1;
+.leaveBtn {
   height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
-  background: transparent;
-  color: hsl(var(--muted-foreground));
-  font-size: 0.875rem;
-  font-weight: 500;
+  padding: 0 16px;
+  background-color: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #64748b;
+  font-size: 0.85rem;
   cursor: pointer;
-  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
-.leaveButton:hover {
-  background-color: hsl(var(--muted));
-  color: hsl(var(--foreground));
-  border-color: hsl(var(--foreground));
-}
-
-@media (max-width: 600px) {
-  .container { width: 92%; padding-top: 24px; }
-  .roomCard { padding: 1.25rem; }
-  .headerRow { flex-direction: column; align-items: flex-start; }
+.leaveBtn:hover {
+  color: #0f172a;
+  border-color: #0f172a;
 }
