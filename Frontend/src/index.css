@@ -5,24 +5,25 @@
 
 *,
 *::before,
-*::after{
+*::after {
   box-sizing: border-box;
 }
-:root{
-  --bg: #0f1020;
-  --card: #181a2f;
-  --card-hover: #1e2140;
 
-  --primary: #6366f1;
-  --primary-hover: #818cf8;
-  --purple-light: #a5b4fc;
+:root {
+  --bg: #07080c;
+  --card: #0e1017;
+  --card-hover: #161924;
+
+  --primary: #8b5cf6;
+  --primary-hover: #a78bfa;
+  --purple-light: #c4b5fd;
 
   --white: #ffffff;
-  --text: #e5e7eb;
-  --muted: #9ca3af;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
 
-  --border: #2a2d4a;
-  --border-hover: #454a78;
+  --border: #1e293b;
+  --border-hover: #334155;
 
   --radius: 12px;
   --font-sans: "Geist Variable", sans-serif;
@@ -30,20 +31,50 @@
 
 html,
 body,
-#root{
+#root {
   margin: 0;
   padding: 0;
   width: 100%;
   min-height: 100%;
   overflow-x: hidden;
+  background: #07080c;
 }
-html{
+
+html {
   font-family: var(--font-sans);
   min-height: 100%;
 }
-body{
+
+body {
   min-height: 100%;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
+}
+
+/* Monaco Custom Line Highlight Decorations for Git-Blame Replay */
+.monaco-sabotage-line-highlight {
+  background: rgba(225, 29, 72, 0.25) !important;
+  border-left: 3px solid #f43f5e !important;
+}
+
+.monaco-fix-line-highlight {
+  background: rgba(16, 185, 129, 0.2) !important;
+  border-left: 3px solid #10b981 !important;
+}
+
+.monaco-sabotage-glyph {
+  background: #f43f5e;
+  border-radius: 50%;
+  width: 8px !important;
+  height: 8px !important;
+  margin-left: 5px;
+}
+
+.monaco-fix-glyph {
+  background: #10b981;
+  border-radius: 50%;
+  width: 8px !important;
+  height: 8px !important;
+  margin-left: 5px;
 }
