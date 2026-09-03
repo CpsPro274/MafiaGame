@@ -403,7 +403,7 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 5000;
 
-httpServer.listen(PORT, "0.0.0.0", async () => {
-  console.log(`🚀 Code Mafia Backend running on http://0.0.0.0:${PORT}`);
+httpServer.listen(PORT, "localhost", async () => {
+  console.log(`🚀 Code Mafia Backend running on http://localhost:${PORT}`);
   await testDbConnection();
 });
