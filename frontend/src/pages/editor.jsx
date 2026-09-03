@@ -10,8 +10,9 @@ import {
   Send,
 } from "lucide-react";
 import styles from "./styles/editor.module.css";
+import { getBackendUrl } from "../socket";
 
-const API_URL = "http://localhost:5000";
+const API_URL = getBackendUrl();
 
 const STARTER_TEMPLATES = {
   javascript: `/**
@@ -21,37 +22,37 @@ const STARTER_TEMPLATES = {
  * @return {number[]}
  */
 function twoSum(nums, target) {
-  const map = new Map();
+    const map = new Map();
 
-  for (let i = 0; i < nums.length; i++) {
-    const complement = target - nums[i];
+    for (let i = 0; i < nums.length; i++) {
+        const diff = target - nums[i];
 
-    if (map.has(complement)) {
-      return [map.get(complement), i];
+        if (map.has(diff)) {
+            return [map.get(diff), i];
+        }
+
+        map.set(nums[i], i);
     }
 
-    map.set(nums[i], i);
-  }
-
-  return [];
+    return [];
 }
 
+// Test
 console.log(twoSum([2, 7, 11, 15], 9));
 `,
 
-  python: `class Solution:
-    def twoSum(self, nums: list[int], target: int) -> list[int]:
-        lookup = {}
+  python: `def twoSum(nums, target):
+    lookup = {}
 
-        for i, num in enumerate(nums):
-            diff = target - num
+    for i, num in enumerate(nums):
+        diff = target - num
 
-            if diff in lookup:
-                return [lookup[diff], i]
+        if diff in lookup:
+            return [lookup[diff], i]
 
-            lookup[num] = i
+        lookup[num] = i
 
-        return []
+    return []
 
 
 # Test
@@ -61,7 +62,8 @@ print(sol.twoSum([2, 7, 11, 15], 9))
 };
 
 export default function MonacoEditorPage() {
-  const { roomCode } = useParams();
+  const params = useParams();
+  const roomCode = (params.roomCode || params.gameId || localStorage.getItem("roomCode") || "").toUpperCase();
 
   const editorRef = useRef(null);
   const socketRef = useRef(null);
@@ -78,7 +80,7 @@ export default function MonacoEditorPage() {
     useState(null);
 
   const [players, setPlayers] = useState([]);
-  const [seconds, setSeconds] = useState(0);
+  const [seconds, setSeconds] = useState(15 * 60); // Default countdown: 15 minutes (900s)
 
   const [challenge, setChallenge] = useState(null);
   const [loadingChallenge, setLoadingChallenge] =
@@ -88,33 +90,28 @@ export default function MonacoEditorPage() {
 
   /*
    * Current logged-in player.
-   *
-   * Your backend uses username as the application-level
-   * player identity and socket.id as the connection identity.
    */
   const username = localStorage.getItem("username");
 
   /*
    * Role is received from game:started.
-   *
-   * Until the game starts, default to DEVELOPER so that
-   * normal editor functionality still works.
    */
   const [playerRole, setPlayerRole] =
     useState("DEVELOPER");
 
   /*
-   * Timer
+   * Countdown Timer
    */
   useEffect(() => {
     const interval = setInterval(() => {
-      setSeconds((prev) => prev + 1);
+      setSeconds((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
 
     return () => clearInterval(interval);
   }, []);
 
   const formatTime = (totalSecs) => {
+    if (!totalSecs || totalSecs <= 0) return "00:00:00";
     const hrs = Math.floor(totalSecs / 3600);
     const mins = Math.floor(
       (totalSecs % 3600) / 60
@@ -192,6 +189,9 @@ export default function MonacoEditorPage() {
           setPlayers(
             response.room?.players || []
           );
+          if (response.room?.timeLimit) {
+            setSeconds(response.room.timeLimit);
+          }
         }
       );
     });
@@ -199,13 +199,6 @@ export default function MonacoEditorPage() {
     /*
      * ------------------------------------------
      * PLAYER JOINED
-     *
-     * Backend:
-     *
-     * socket.to(room.roomCode).emit(
-     *   "room:player_joined",
-     *   { player, room }
-     * );
      * ------------------------------------------
      */
     socket.on(
@@ -248,16 +241,6 @@ export default function MonacoEditorPage() {
     /*
      * ------------------------------------------
      * GAME STARTED
-     *
-     * Backend sends this individually:
-     *
-     * {
-     *   roomCode,
-     *   role,
-     *   room,
-     *   challenge,
-     *   leaderboard
-     * }
      * ------------------------------------------
      */
     socket.on(
@@ -268,20 +251,18 @@ export default function MonacoEditorPage() {
           data
         );
 
-        /*
-         * Store our secret role.
-         */
         if (data?.role) {
           setPlayerRole(data.role);
         }
 
-        /*
-         * Update room players.
-         */
         if (data?.room?.players) {
           setPlayers(
             data.room.players
           );
+        }
+
+        if (data?.room?.timeLimit) {
+          setSeconds(data.room.timeLimit);
         }
 
         /*

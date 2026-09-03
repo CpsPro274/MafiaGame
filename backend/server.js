@@ -37,13 +37,29 @@ import { getChallengeByDifficulty } from "./services/challengeService.js";
 import { initScores, awardPoints, getLeaderboard } from "./services/scoreManager.js";
 
 const app = express();
-app.use(cors());
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps, curl, or same-origin)
+    if (!origin) return callback(null, true);
+    return callback(null, origin);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "*",
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      return callback(null, origin);
+    },
+    credentials: true,
     methods: ["GET", "POST"]
   },
   transports: ["websocket", "polling"]
@@ -80,7 +96,8 @@ app.get("/api/rooms/:roomCode", (req, res) => {
     status: room.status,
     difficulty: room.difficulty || "MEDIUM",
     playerCount: room.players.length,
-    maxPlayers: room.maxPlayers
+    maxPlayers: room.maxPlayers,
+    timeLimit: room.timeLimit || 1800
   });
 });
 
@@ -89,15 +106,21 @@ app.get("/api/rooms/:roomCode", (req, res) => {
 // ==========================================
 io.on("connection", (socket) => {
   console.log(`[Socket Connected] ID: ${socket.id}`);
-  socket.on("room:create", async ({ username, difficulty = "MEDIUM", maxPlayers=8 }, callback) => {
+  socket.on("room:create", async ({ username, difficulty = "MEDIUM", maxPlayers = 8, timeLimit = 30, mafiaCount = 1 }, callback) => {
     try {
       if (!username || !username.trim()) {
         return callback?.({ success: false, error: "Username is required." });
       }
 
-      const { room, player } = createRoom(socket.id, username, difficulty, Number(maxPlayers));
+      // Convert timeLimit from minutes to seconds
+      const timeLimitSeconds = Number(timeLimit) > 0 ? Number(timeLimit) * 60 : 1800;
+
+      const { room, player } = createRoom(socket.id, username, difficulty, Number(maxPlayers), {
+        timeLimit: timeLimitSeconds,
+        mafiaCount: Number(mafiaCount)
+      });
       socket.join(room.roomCode);
-      console.log(`[Room Created] Code: ${room.roomCode} (${room.difficulty}) by ${username}`);
+      console.log(`[Room Created] Code: ${room.roomCode} (${room.difficulty}, ${timeLimitSeconds}s duration) by ${username}`);
 
       callback?.({
         success: true,
@@ -405,7 +428,7 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 5000;
 
-httpServer.listen(PORT, "localhost", async () => {
-  console.log(`🚀 Code Mafia Backend running on http://localhost:${PORT}`);
+httpServer.listen(PORT, "0.0.0.0", async () => {
+  console.log(`🚀 Code Mafia Backend running on port ${PORT} (0.0.0.0)`);
   await testDbConnection();
 });

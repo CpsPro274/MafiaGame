@@ -100,12 +100,14 @@ export default function Lobby(){
 
     socket.emit(
       "room:create",
-     {
+      {
         username: createForm.playerName.trim(),
         difficulty: createForm.difficulty.toUpperCase(),
         maxPlayers: Number(createForm.maxPlayers),
+        timeLimit: Number(createForm.timeLimit),
+        mafiaCount: Number(createForm.mafiaCount),
       },
-     (response) =>{
+      (response) => {
         setLoading(false);
 
         console.log("Create room response:", response);
@@ -135,7 +137,7 @@ export default function Lobby(){
           "username",
           response.player.username
         );
-        navigate(`/editor/${response.roomCode}`);
+        navigate(`/room/${response.roomCode}`);
       }
     );
   };
@@ -200,7 +202,7 @@ export default function Lobby(){
         );
 
         navigate(
-          `/editor/${response.roomCode}`
+          `/room/${response.roomCode}`
         );
       }
     );

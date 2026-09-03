@@ -1,7 +1,14 @@
 import axios from "axios";
 
+const getBackendUrl = () => {
+  if (typeof window !== "undefined" && window.location && window.location.hostname) {
+    return `${window.location.protocol}//${window.location.hostname}:5000`;
+  }
+  return "http://localhost:5000";
+};
+
 const api=axios.create({
-    baseURL: "http://localhost:5000/api",
+    baseURL: `${getBackendUrl()}/api`,
     withCredentials: true
 });
 api.interceptors.request.use(
