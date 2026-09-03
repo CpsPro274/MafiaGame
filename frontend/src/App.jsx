@@ -5,7 +5,7 @@ import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import Onboarding from "./pages/Onboarding";
 import Preview from "./pages/Preview"
-import ChatBot from "./pages/chat"
+import Editor from "./pages/editor"
 
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -18,9 +18,8 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/home" element={<Home />}/>
         <Route path="/dashboard" element={<Dashboard />}/>
-        <Route path="/chatbot" element={<ChatBot />}/>
         <Route path="/onboarding" element={<Onboarding />}/>
-        <Route path="/preview" element={<Preview />}/>
+        <Route path="/editor" element={<Editor />}/>
       </Routes>
     </BrowserRouter>
   );
