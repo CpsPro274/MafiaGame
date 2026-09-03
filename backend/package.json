@@ -1,0 +1,20 @@
+{
+  "dependencies": {
+    "dockerode": "^5.0.1",
+    "express": "^5.2.1",
+    "uuid": "^14.0.2"
+  },
+  "name": "backend",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "main": "server.js",
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
