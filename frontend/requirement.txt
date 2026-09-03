@@ -28,3 +28,8 @@ eslint-plugin-react-hooks
 eslint-plugin-react-refresh
 globals
 vite
+
+yjs 
+y-websocket 
+monaco-editor 
+@monaco-editor/react

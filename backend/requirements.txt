@@ -1,1 +1,1 @@
-express dockerode uuid pg dotenv
+express dockerode uuidexpress dockerode uuid pg dotenv
