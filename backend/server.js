@@ -13,6 +13,7 @@ import cors from "cors";
 import { testDbConnection, query } from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import challengeRoutes from "./routes/challengeRoutes.js";
+import roomRoutes from "./routes/roomRoutes.js";
 import {
   createRoom,
   joinRoom,
@@ -48,11 +49,15 @@ const io = new Server(httpServer, {
   transports: ["websocket", "polling"]
 });
 
+// Provide io instance to Express routes
+app.set("io", io);
+
 // ==========================================
 // REST API ROUTES
 // ==========================================
 app.use("/api/auth", authRoutes);
 app.use("/api/challenges", challengeRoutes);
+app.use("/api", roomRoutes); // Mounts /api/create-room, /api/join-room, /api/rooms
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });

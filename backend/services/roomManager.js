@@ -20,11 +20,11 @@ export function generateRoomCode() {
 /**
  * Create a new room with the creator as Host
  */
-export function createRoom(socketId, username, difficulty = "MEDIUM", maxPlayers = 8) {
-  const roomCode = generateRoomCode();
+export function createRoom(socketId, username, difficulty = "MEDIUM", maxPlayers = 8, extraOptions = {}) {
+  const roomCode = extraOptions.roomCode || generateRoomCode();
 
   const hostPlayer = {
-    socketId,
+    socketId: socketId || null,
     username: username.trim(),
     isHost: true,
     role: null, // Assigned on game start ('DEVELOPER' | 'MAFIA')
@@ -32,15 +32,23 @@ export function createRoom(socketId, username, difficulty = "MEDIUM", maxPlayers
     joinedAt: Date.now()
   };
 
+  const parsedMaxPlayers = parseInt(maxPlayers, 10);
+  const validMaxPlayers =
+    !isNaN(parsedMaxPlayers) && parsedMaxPlayers >= 2 && parsedMaxPlayers <= 20
+      ? parsedMaxPlayers
+      : 8;
+
   const room = {
     roomCode,
-    hostSocketId: socketId,
-    maxPlayers,
+    name: extraOptions.name || extraOptions.roomName || extraOptions.lobbyName || `${username.trim()}'s Room`,
+    hostSocketId: socketId || null,
+    maxPlayers: validMaxPlayers,
     difficulty: (difficulty || "MEDIUM").toUpperCase(), // 'EASY' | 'MEDIUM' | 'HARD'
     status: "LOBBY", // 'LOBBY' | 'IN_PROGRESS' | 'FINISHED'
     players: [hostPlayer],
-    challengeId: 1,
-    timeLimit: 600, // 10 minutes default
+    challengeId: extraOptions.challengeId || 1,
+    timeLimit: extraOptions.timeLimit ? Number(extraOptions.timeLimit) : 600, // 10 minutes default
+    mafiaCount: extraOptions.mafiaCount ? Number(extraOptions.mafiaCount) : 1,
     createdAt: Date.now()
   };
 
@@ -66,6 +74,9 @@ export function setRoomDifficulty(roomCode, difficulty) {
  * Gracefully handles reconnects and auto-suffixes duplicate usernames
  */
 export function joinRoom(roomCode, socketId, username) {
+  if (!roomCode || typeof roomCode !== "string") {
+    return { error: "Room code is required.", status: 400 };
+  }
   const normalizedCode = roomCode.trim().toUpperCase();
   console.log(`🔍 [Join Attempt] Code: "${normalizedCode}", Available Rooms: [${Array.from(rooms.keys()).join(", ")}]`);
 
@@ -75,11 +86,15 @@ export function joinRoom(roomCode, socketId, username) {
     return {
       error: `Room "${normalizedCode}" not found. Available active rooms: ${
         rooms.size > 0 ? Array.from(rooms.keys()).join(", ") : "None (Create a room first)"
-      }`
+      }`,
+      status: 404
     };
   }
 
-  let finalUsername = username.trim();
+  let finalUsername = (username || "").trim();
+  if (!finalUsername) {
+    return { error: "Username is required.", status: 400 };
+  }
 
   // 1. Check if this is a reconnecting player (by username)
   const existingPlayerByName = room.players.find(
@@ -87,9 +102,11 @@ export function joinRoom(roomCode, socketId, username) {
   );
 
   if (existingPlayerByName) {
-    existingPlayerByName.socketId = socketId;
+    if (socketId) {
+      existingPlayerByName.socketId = socketId;
+    }
     if (!room.hostSocketId && existingPlayerByName.isHost) {
-      room.hostSocketId = socketId;
+      room.hostSocketId = socketId || null;
     }
     console.log(`🔄 [Player Reconnected] ${finalUsername} rejoined Room: ${normalizedCode} (Role: ${existingPlayerByName.role})`);
     return { room, player: existingPlayerByName, reconnected: true };
@@ -97,11 +114,11 @@ export function joinRoom(roomCode, socketId, username) {
 
   // 2. If room is in progress and player was not previously in room, reject
   if (room.status !== "LOBBY") {
-    return { error: "Match is already in progress in this room." };
+    return { error: "Match is already in progress in this room.", status: 409 };
   }
 
   if (room.players.length >= room.maxPlayers) {
-    return { error: "Room is already full." };
+    return { error: "Room is already full.", status: 409 };
   }
 
   // 3. If username is taken, auto-assign friendly suffix
@@ -113,7 +130,7 @@ export function joinRoom(roomCode, socketId, username) {
   }
 
   const newPlayer = {
-    socketId,
+    socketId: socketId || null,
     username: finalUsername,
     isHost: room.players.length === 0,
     role: null,
@@ -122,7 +139,7 @@ export function joinRoom(roomCode, socketId, username) {
   };
 
   room.players.push(newPlayer);
-  if (!room.hostSocketId) {
+  if (!room.hostSocketId && socketId) {
     room.hostSocketId = socketId;
   }
 
@@ -220,3 +237,11 @@ export function getRoomBySocketId(socketId) {
   }
   return null;
 }
+
+/**
+ * Get all active rooms
+ */
+export function getAllRooms() {
+  return Array.from(rooms.values());
+}
+

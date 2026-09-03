@@ -149,3 +149,24 @@ export async function removePlayerFromDb(roomCode, username) {
     // Fail silently
   }
 }
+
+/**
+ * Get room record from PostgreSQL
+ */
+export async function getRoomFromDb(roomCode) {
+  try {
+    const cleanCode = roomCode.trim().toUpperCase();
+    const res = await query(
+      `SELECT r.id, r.room_code, r.host_id, r.challenge_id, r.status, r.created_at, u.username as host_username
+       FROM rooms r
+       LEFT JOIN users u ON r.host_id = u.id
+       WHERE r.room_code = $1`,
+      [cleanCode]
+    );
+    if (res.rows.length === 0) return null;
+    return res.rows[0];
+  } catch (err) {
+    return null;
+  }
+}
+
