@@ -77,6 +77,8 @@ export function joinRoom(roomCode, socketId, username) {
         rooms.size > 0 ? Array.from(rooms.keys()).join(", ") : "None (Create a room first)"
       }`
     };
+  }
+
   let finalUsername = username.trim();
 
   // 1. Check if this is a reconnecting player (by username)
@@ -102,7 +104,7 @@ export function joinRoom(roomCode, socketId, username) {
     return { error: "Room is already full." };
   }
 
-  // 3. If username is taken, auto-suffix
+  // 3. If username is taken, auto-assign friendly suffix
   let counter = 2;
   const originalName = finalUsername;
   while (room.players.some((p) => p.username.toLowerCase() === finalUsername.toLowerCase())) {
