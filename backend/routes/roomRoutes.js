@@ -15,9 +15,6 @@ import {
 
 const router = express.Router();
 
-/**
- * Helper to extract user identity from JWT Authorization header if present
- */
 function extractUserFromToken(req) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
@@ -33,19 +30,6 @@ function extractUserFromToken(req) {
   }
 }
 
-/**
- * Create a new game room
- * POST /api/create-room (or /api/rooms/create)
- *
- * Body parameters:
- *   - username / playerName (string, required or extracted from Bearer token)
- *   - difficulty (string: EASY, MEDIUM, HARD, optional, default "MEDIUM")
- *   - maxPlayers (number: 2-20, optional, default 8)
- *   - lobbyName / roomName (string, optional)
- *   - mafiaCount (number: optional, default 1)
- *   - timeLimit (number in minutes or seconds: optional, default 600s)
- *   - socketId (string: optional active Socket.IO connection ID)
- */
 export async function handleCreateRoom(req, res) {
   try {
     const tokenUser = extractUserFromToken(req);
@@ -76,10 +60,10 @@ export async function handleCreateRoom(req, res) {
     let timeLimit = parseInt(req.body.timeLimit, 10);
     if (!isNaN(timeLimit)) {
       if (timeLimit <= 60) {
-        timeLimit = timeLimit * 60; // convert minutes to seconds
+        timeLimit = timeLimit * 60;
       }
     } else {
-      timeLimit = 600; // 10 minutes default
+      timeLimit = 600;
     }
 
     const mafiaCount = parseInt(req.body.mafiaCount, 10) || 1;
@@ -96,7 +80,6 @@ export async function handleCreateRoom(req, res) {
       timeLimit
     });
 
-    // If client supplied an active socketId, join that socket to the room
     const io = req.app.get("io");
     if (io && socketId) {
       const sock = io.sockets.sockets.get(socketId);
@@ -105,7 +88,6 @@ export async function handleCreateRoom(req, res) {
       }
     }
 
-    // Persist room to PostgreSQL in background (with silent fallback)
     saveRoomToDb(room.roomCode, username).catch((err) => {
       console.warn("DB save room fallback:", err.message);
     });
@@ -139,15 +121,6 @@ export async function handleCreateRoom(req, res) {
   }
 }
 
-/**
- * Join an existing game room
- * POST /api/join-room (or /api/rooms/join)
- *
- * Body parameters:
- *   - roomCode / lobbyCode / code (string, required)
- *   - username / playerName (string, required or extracted from Bearer token)
- *   - socketId (string: optional active Socket.IO connection ID)
- */
 export async function handleJoinRoom(req, res) {
   try {
     const tokenUser = extractUserFromToken(req);
@@ -175,7 +148,6 @@ export async function handleJoinRoom(req, res) {
 
     let result = joinRoom(roomCode, socketId, username);
 
-    // If not found in memory, try looking up in PostgreSQL DB
     if (result.error && result.error.includes("not found")) {
       const dbRoom = await getRoomFromDb(roomCode);
       if (dbRoom && (dbRoom.status === "LOBBY" || !dbRoom.status)) {
@@ -197,7 +169,6 @@ export async function handleJoinRoom(req, res) {
 
     const { room, player, reconnected } = result;
 
-    // Real-time synchronization
     const io = req.app.get("io");
     if (io) {
       if (socketId) {
@@ -207,7 +178,6 @@ export async function handleJoinRoom(req, res) {
         }
       }
 
-      // Broadcast join event to connected room members
       io.to(room.roomCode).emit("room:player_joined", {
         player,
         room,
@@ -215,7 +185,6 @@ export async function handleJoinRoom(req, res) {
       });
     }
 
-    // Persist join to DB in background
     savePlayerJoinToDb(room.roomCode, player.username).catch((err) => {
       console.warn("DB save join fallback:", err.message);
     });
@@ -247,10 +216,6 @@ export async function handleJoinRoom(req, res) {
   }
 }
 
-/**
- * List all active rooms
- * GET /api/rooms
- */
 export function handleListRooms(req, res) {
   const allRooms = getAllRooms().map((r) => ({
     roomCode: r.roomCode,
@@ -269,10 +234,6 @@ export function handleListRooms(req, res) {
   });
 }
 
-/**
- * Get details for a specific room
- * GET /api/rooms/:roomCode
- */
 export function handleGetRoom(req, res) {
   const roomCode = req.params.roomCode;
   const room = getRoom(roomCode);
@@ -292,15 +253,10 @@ export function handleGetRoom(req, res) {
   });
 }
 
-// --------------------------------------------------------------------------
-// Route Definitions
-// --------------------------------------------------------------------------
 
-// Primary requested endpoints
 router.post("/create-room", handleCreateRoom);
 router.post("/join-room", handleJoinRoom);
 
-// Method guidance for GET on action endpoints
 router.get("/create-room", (req, res) => {
   res.status(405).json({
     success: false,
@@ -315,7 +271,6 @@ router.get("/join-room", (req, res) => {
   });
 });
 
-// RESTful aliases & queries
 router.post("/rooms/create", handleCreateRoom);
 router.post("/rooms/join", handleJoinRoom);
 router.get("/rooms", handleListRooms);

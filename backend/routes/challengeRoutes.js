@@ -5,10 +5,6 @@ import { getChallengeByDifficulty } from "../services/challengeService.js";
 
 const router = express.Router();
 
-/**
- * Get all available challenges (for lobby selection)
- * GET /api/challenges
- */
 router.get("/", async (req, res) => {
   try {
     const result = await query(
@@ -23,20 +19,19 @@ router.get("/", async (req, res) => {
   }
 });
 
-/**
- * Get a single challenge by ID or Room Code with initial buggy code
- * GET /api/challenges/:id
- */
 router.get("/:id", async (req, res) => {
   try {
     const param = req.params.id;
 
-    // Handle alphanumeric Room Code strings (e.g. "NJ86XC")
     if (isNaN(Number(param))) {
       const room = getRoom(param);
       const difficulty = room ? room.difficulty : "MEDIUM";
-      const challenge = getChallengeByDifficulty(difficulty);
-      return res.json(challenge);
+      const challenge = room?.challenge || getChallengeByDifficulty(difficulty);
+      const codeToServe = (room?.phase === "DEBUG" && room?.currentCode) ? room.currentCode : challenge.buggy_code;
+      return res.json({
+        ...challenge,
+        buggy_code: codeToServe
+      });
     }
 
     const result = await query(
@@ -47,12 +42,10 @@ router.get("/:id", async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      // Fallback to default challenge if not found in database
       const challenge = getChallengeByDifficulty("MEDIUM");
       return res.json(challenge);
     }
 
-    // Filter hidden test cases before sending to client during gameplay
     const challenge = result.rows[0];
     const publicTests = Array.isArray(challenge.test_cases)
       ? challenge.test_cases.filter((t) => !t.hidden)
@@ -64,7 +57,6 @@ router.get("/:id", async (req, res) => {
     });
   } catch (err) {
     console.error("Fetch Challenge Details Error:", err);
-    // Graceful fallback to medium difficulty challenge on database error
     const challenge = getChallengeByDifficulty("MEDIUM");
     res.json(challenge);
   }

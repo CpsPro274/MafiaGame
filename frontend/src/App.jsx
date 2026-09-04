@@ -1,4 +1,3 @@
-//import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
@@ -9,7 +8,6 @@ import Editor from "./pages/editor";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 
-// protect dashboard, application, chat, studentProfile, counselorProfile
 function App() {
   return (
     <BrowserRouter>

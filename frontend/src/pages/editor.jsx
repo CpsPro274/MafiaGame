@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import Editor from "@monaco-editor/react";
-import { io } from "socket.io-client";
 import {
   Timer,
   RotateCcw,
@@ -10,93 +9,57 @@ import {
   Send,
 } from "lucide-react";
 import styles from "./styles/editor.module.css";
-import { getBackendUrl } from "../socket";
+import { socket as sharedSocket, getBackendUrl } from "../socket";
 
 const API_URL = getBackendUrl();
 
 const STARTER_TEMPLATES = {
-  javascript: `/**
- * Problem: Two Sum
- * @param {number[]} nums
- * @param {number} target
- * @return {number[]}
- */
-function twoSum(nums, target) {
-    const map = new Map();
-
-    for (let i = 0; i < nums.length; i++) {
-        const diff = target - nums[i];
-
-        if (map.has(diff)) {
-            return [map.get(diff), i];
-        }
-
-        map.set(nums[i], i);
-    }
-
+  javascript: `function twoSum(nums, target) {
     return [];
 }
-
-// Test
-console.log(twoSum([2, 7, 11, 15], 9));
 `,
 
   python: `def twoSum(nums, target):
-    lookup = {}
-
-    for i, num in enumerate(nums):
-        diff = target - num
-
-        if diff in lookup:
-            return [lookup[diff], i]
-
-        lookup[num] = i
-
     return []
-
-
-# Test
-sol = Solution()
-print(sol.twoSum([2, 7, 11, 15], 9))
 `,
 };
 
 export default function MonacoEditorPage() {
   const params = useParams();
-  const roomCode = (params.roomCode || params.gameId || localStorage.getItem("roomCode") || "").toUpperCase();
+  const location = useLocation();
+  const initialGameData = location.state;
+
+  const roomCode = (params.roomCode || params.gameId || sessionStorage.getItem("roomCode") || localStorage.getItem("roomCode") || "").toUpperCase();
+  const username = sessionStorage.getItem("username") || localStorage.getItem("username");
 
   const editorRef = useRef(null);
   const socketRef = useRef(null);
   const isRemoteUpdate = useRef(false);
 
-  const [language, setLanguage] = useState("javascript");
-  const [code, setCode] = useState(
-    STARTER_TEMPLATES.javascript
+  const initialChallenge = initialGameData?.challenge || null;
+  const initialLang = initialChallenge?.language?.toLowerCase() === "python" ? "python" : "javascript";
+  const initialCode = initialChallenge?.buggy_code || STARTER_TEMPLATES[initialLang];
+
+  const [language, setLanguage] = useState(initialLang);
+  const [code, setCode] = useState(initialCode);
+
+  const [connected, setConnected] = useState(sharedSocket?.connected || false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [executionResult, setExecutionResult] = useState(null);
+
+  const [players, setPlayers] = useState(initialGameData?.room?.players || []);
+  const [phase, setPhase] = useState(initialGameData?.phase || "SABOTAGE");
+  const [phaseSeconds, setPhaseSeconds] = useState(
+    initialGameData?.phase === "DEBUG"
+      ? (initialGameData?.room?.timeLimit || 600)
+      : (initialGameData?.sabotageDuration || 30)
   );
 
-  const [connected, setConnected] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
-  const [executionResult, setExecutionResult] =
-    useState(null);
+  const [challenge, setChallenge] = useState(initialChallenge);
+  const [loadingChallenge, setLoadingChallenge] = useState(!initialChallenge);
+  const [challengeError, setChallengeError] = useState("");
 
-  const [players, setPlayers] = useState([]);
-  const [seconds, setSeconds] = useState(15 * 60); // Default countdown: 15 minutes (900s)
-
-  const [challenge, setChallenge] = useState(null);
-  const [loadingChallenge, setLoadingChallenge] =
-    useState(true);
-  const [challengeError, setChallengeError] =
-    useState("");
-
-  /*
-   * Current logged-in player.
-   */
-  const username = localStorage.getItem("username");
-
-  /*
-   * Role is received from game:started.
-   */
-  const [playerRole, setPlayerRole] = useState("DEVELOPER");
+  const [playerRole, setPlayerRole] = useState(initialGameData?.role || "DEVELOPER");
 
   const DEFAULT_TESTS = [
     { id: 1, name: "Test Case 1", input: { nums: [2, 7, 11, 15], target: 9 }, expected: [0, 1], status: "NOT RUN" },
@@ -115,7 +78,6 @@ export default function MonacoEditorPage() {
   const [ejectionResult, setEjectionResult] = useState(null);
   const [victoryData, setVictoryData] = useState(null);
 
-  // Tactical Sabotage & Powerup states
   const [isGlitched, setIsGlitched] = useState(false);
   const [isFalseGreen, setIsFalseGreen] = useState(false);
   const [isFunctionLocked, setIsFunctionLocked] = useState(false);
@@ -127,12 +89,9 @@ export default function MonacoEditorPage() {
     CODE_RADAR: 0
   });
 
-  /*
-   * Countdown Timer
-   */
   useEffect(() => {
     const interval = setInterval(() => {
-      setSeconds((prev) => (prev > 0 ? prev - 1 : 0));
+      setPhaseSeconds((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
 
     return () => clearInterval(interval);
@@ -153,11 +112,6 @@ export default function MonacoEditorPage() {
       .join(":");
   };
 
-  /*
-   * ==========================================
-   * SOCKET.IO CONNECTION
-   * ==========================================
-   */
   useEffect(() => {
     if (!roomCode || !username) {
       console.warn(
@@ -166,34 +120,14 @@ export default function MonacoEditorPage() {
       return;
     }
 
-    console.log(
-      "Connecting to Socket.IO:",
-      API_URL
-    );
-
-    const socket = io(API_URL, {
-      transports: ["websocket", "polling"],
-      withCredentials: true,
-    });
-
+    const socket = sharedSocket;
     socketRef.current = socket;
 
-    /*
-     * ------------------------------------------
-     * CONNECT
-     * ------------------------------------------
-     */
-    socket.on("connect", () => {
-      console.log(
-        "Connected to backend:",
-        socket.id
-      );
+    if (!socket.connected) {
+      socket.connect();
+    }
 
-      setConnected(true);
-
-      /*
-       * Rejoin room.
-       */
+    const joinEditorRoom = () => {
       socket.emit(
         "room:join",
         {
@@ -201,32 +135,54 @@ export default function MonacoEditorPage() {
           username,
         },
         (response) => {
-          console.log(
-            "Editor Room rejoin:",
-            response
-          );
+          console.log("Editor Room rejoin:", response);
 
           if (!response?.success) {
-            console.error(
-              "Join error:",
-              response?.error
-            );
+            console.error("Join error:", response?.error);
             return;
           }
 
-          setPlayers(
-            response.room?.players || []
+          setConnected(true);
+          setPlayers(response.room?.players || []);
+          if (response.room?.phase) {
+            setPhase(response.room.phase);
+            if (response.room.phaseExpiresAt) {
+              const rem = Math.max(0, Math.round((response.room.phaseExpiresAt - Date.now()) / 1000));
+              setPhaseSeconds(rem);
+            }
+          }
+
+          const myPlayer = response.room?.players?.find(
+            (p) => p.username?.toLowerCase() === username?.toLowerCase()
           );
-          if (response.room?.timeLimit) {
-            setSeconds(response.room.timeLimit);
+          if (myPlayer?.role && myPlayer.role !== "???") {
+            setPlayerRole(myPlayer.role);
           }
         }
       );
-    });
+    };
 
-    socket.on("code:updated", ({ code: remoteCode, author }) => {
-      console.log(`[Collab Sync] Code updated by ${author}`);
+    if (socket.connected) {
+      setConnected(true);
+      joinEditorRoom();
+    }
+
+    const handleConnect = () => {
+      console.log("Connected to backend:", socket.id);
+      setConnected(true);
+      joinEditorRoom();
+    };
+
+    socket.on("connect", handleConnect);
+
+    socket.on("code:updated", ({ code: remoteCode, author, activeLines }) => {
+      console.log(`[Collab Sync] Code updated by ${author}`, activeLines);
       if (typeof remoteCode !== "string") return;
+
+      // REQUIREMENT 1: When in SABOTAGE phase, developers must NOT see mafia edits!
+      if (phase === "SABOTAGE" && playerRole !== "MAFIA") {
+        return;
+      }
 
       isRemoteUpdate.current = true;
       setCode(remoteCode);
@@ -246,12 +202,13 @@ export default function MonacoEditorPage() {
         setTestCases(
           results.map((r, idx) => ({
             id: idx + 1,
-            name: `Test Case ${idx + 1}`,
-            input: testCases[idx]?.input || { test: idx + 1 },
+            name: r.name || `Test Case ${idx + 1}`,
+            input: r.input !== undefined ? r.input : testCases[idx]?.input,
             expected: r.expected,
             actual: r.actual,
             status: r.passed ? "PASSED" : "FAILED",
-            passed: r.passed
+            passed: r.passed,
+            error: r.error
           }))
         );
       } else {
@@ -262,6 +219,15 @@ export default function MonacoEditorPage() {
             passed
           }))
         );
+      }
+
+      if (author === username) {
+        setExecutionResult({
+          status: passed ? "success" : "failed",
+          passed: Boolean(passed),
+          stdout: details || "",
+          stderr: ""
+        });
       }
 
       setAuditLogs((prev) => [
@@ -291,11 +257,6 @@ export default function MonacoEditorPage() {
       setTimeout(() => setSabotageBanner(""), (durationSec || 6) * 1000);
     });
 
-    /*
-     * ------------------------------------------
-     * PLAYER JOINED
-     * ------------------------------------------
-     */
     socket.on(
       "room:player_joined",
       (data) => {
@@ -312,11 +273,6 @@ export default function MonacoEditorPage() {
       }
     );
 
-    /*
-     * ------------------------------------------
-     * PLAYER LEFT
-     * ------------------------------------------
-     */
     socket.on(
       "room:player_left",
       (data) => {
@@ -333,204 +289,156 @@ export default function MonacoEditorPage() {
       }
     );
 
-    /*
-     * ------------------------------------------
-     * GAME STARTED
-     * ------------------------------------------
-     */
-    socket.on(
-      "game:started",
-      (data) => {
-        console.log(
-          "Game started:",
-          data
-        );
+    const handleGameStartedEvent = (data) => {
+      console.log("Game started event:", data);
 
-        if (data?.role) {
-          setPlayerRole(data.role);
+      if (data?.role) {
+        setPlayerRole(data.role);
+      }
+
+      if (data?.room?.players) {
+        setPlayers(data.room.players);
+      }
+
+      if (data?.phase) {
+        setPhase(data.phase);
+        if (data.phase === "SABOTAGE") {
+          setPhaseSeconds(data.sabotageDuration || 30);
+        } else if (data.phase === "DEBUG") {
+          setPhaseSeconds(data.room?.timeLimit || 600);
+        }
+      }
+
+      if (data?.challenge) {
+        const challengeData = data.challenge;
+        setChallenge(challengeData);
+
+        const challengeLanguage =
+          challengeData.language?.toLowerCase() === "python"
+            ? "python"
+            : "javascript";
+
+        const challengeCode =
+          challengeData.buggy_code ||
+          STARTER_TEMPLATES[challengeLanguage] ||
+          "";
+
+        setLanguage(challengeLanguage);
+        setCode(challengeCode);
+
+        if (challengeData.test_cases && Array.isArray(challengeData.test_cases)) {
+          setTestCases(
+            challengeData.test_cases.map((tc, idx) => ({
+              id: idx + 1,
+              name: tc.name || `Test Case ${idx + 1}`,
+              input: tc.input,
+              expected: tc.expected,
+              actual: undefined,
+              status: "NOT RUN",
+              passed: false
+            }))
+          );
         }
 
-        if (data?.room?.players) {
-          setPlayers(
-            data.room.players
-          );
+        if (editorRef.current) {
+          isRemoteUpdate.current = true;
+          editorRef.current.setValue(challengeCode);
+          setTimeout(() => {
+            isRemoteUpdate.current = false;
+          }, 0);
         }
+      }
 
-        if (data?.room?.timeLimit) {
-          setSeconds(data.room.timeLimit);
-        }
+      setLoadingChallenge(false);
+    };
 
-        /*
-         * Use the challenge selected by the backend.
-         */
-        if (data?.challenge) {
-          const challengeData =
-            data.challenge;
+    const handlePhaseChanged = (data) => {
+      console.log("Room phase changed:", data);
+      if (data?.phase) {
+        setPhase(data.phase);
+        if (data.phase === "DEBUG") {
+          setPhaseSeconds(data.timeLimit || 600);
+          setShowVotingModal(false);
 
-          setChallenge(
-            challengeData
-          );
-
-          const challengeLanguage =
-            challengeData.language?.toLowerCase() ===
-            "python"
-              ? "python"
-              : "javascript";
-
-          const challengeCode =
-            challengeData.buggy_code ||
-            STARTER_TEMPLATES[
-              challengeLanguage
-            ] ||
-            "";
-
-          setLanguage(
-            challengeLanguage
-          );
-
-          setCode(
-            challengeCode
-          );
-
-          if (editorRef.current) {
-            isRemoteUpdate.current =
-              true;
-
-            editorRef.current.setValue(
-              challengeCode
-            );
-
+          // Reveal the code that the mafia edited during sabotage
+          if (data.code && typeof data.code === "string") {
+            isRemoteUpdate.current = true;
+            setCode(data.code);
+            if (editorRef.current) {
+              editorRef.current.setValue(data.code);
+            }
             setTimeout(() => {
-              isRemoteUpdate.current =
-                false;
-            }, 0);
+              isRemoteUpdate.current = false;
+            }, 50);
           }
+        } else if (data.phase === "VOTING") {
+          setPhaseSeconds(data.votingDuration || 45);
+          setShowVotingModal(true);
+          setVotes({});
+          setHasVoted(false);
+          setEjectionResult(null);
+        } else if (data.phase === "FINISHED") {
+          setPhaseSeconds(0);
         }
-
-        setLoadingChallenge(false);
       }
-    );
+    };
 
-    /*
-     * ------------------------------------------
-     * COLLABORATIVE CODE UPDATE
-     *
-     * Backend sends:
-     *
-     * {
-     *   code,
-     *   author,
-     *   activeLines
-     * }
-     *
-     * IMPORTANT:
-     * socket.to(roomCode) excludes the sender.
-     * Therefore we do NOT compare player IDs.
-     * ------------------------------------------
-     */
-    socket.on(
-      "code:updated",
-      ({
-        code: remoteCode,
-        author,
-        activeLines,
-      }) => {
-        console.log(
-          `Code updated by ${author}`,
-          activeLines
-        );
+    const handleMeetingStarted = (data) => {
+      console.log("Meeting started:", data);
+      setPhase("VOTING");
+      setShowVotingModal(true);
+      setPhaseSeconds(data.meetingDurationSec || 45);
+      setVotes({});
+      setHasVoted(false);
+      setEjectionResult(null);
+    };
 
-        if (
-          typeof remoteCode !==
-          "string"
-        ) {
-          return;
-        }
+    const handleVoteCast = (data) => {
+      console.log("Vote cast update:", data);
+      if (data?.votes) {
+        setVotes(data.votes);
+      } else if (data?.voterName && data?.targetUsername) {
+        setVotes((prev) => ({ ...prev, [data.voterName]: data.targetUsername }));
+      }
+    };
 
-        /*
-         * Prevent Monaco's onChange from
-         * broadcasting this update back.
-         */
-        isRemoteUpdate.current =
-          true;
+    const handleMeetingResult = (data) => {
+      console.log("Meeting result:", data);
+      setEjectionResult({
+        ejectedPlayer: data.ejectedPlayer,
+        wasMafia: data.wasMafia,
+        message: data.ejectedPlayer
+          ? `${data.ejectedPlayer} was ejected! They were ${data.wasMafia ? "the MAFIA! 😈" : "a DEVELOPER. 😇"}`
+          : "No consensus reached. Nobody was ejected."
+      });
 
-        setCode(remoteCode);
-
-        if (
-          editorRef.current &&
-          editorRef.current.getValue() !==
-            remoteCode
-        ) {
-          editorRef.current.setValue(
-            remoteCode
-          );
-        }
-
+      if (data.winnerTeam) {
         setTimeout(() => {
-          isRemoteUpdate.current =
-            false;
-        }, 0);
+          setVictoryData({
+            winnerTeam: data.winnerTeam,
+            message: data.endReason || (data.winnerTeam === "DEVELOPERS" ? "Developers Win!" : "Mafia Wins!")
+          });
+        }, 2200);
       }
-    );
+    };
 
-    /*
-     * ------------------------------------------
-     * TEST RESULT
-     *
-     * Backend:
-     *
-     * io.to(roomCode).emit("test:result", {
-     *   passed,
-     *   details,
-     *   author
-     * });
-     * ------------------------------------------
-     */
-    socket.on(
-      "test:result",
-      ({
-        passed,
-        details,
-        author,
-      }) => {
-        console.log(
-          `Test result from ${author}:`,
-          passed,
-          details
-        );
+    const handleGameFinished = (data) => {
+      console.log("Game finished:", data);
+      setPhase("FINISHED");
+      setVictoryData({
+        winnerTeam: data.winnerTeam,
+        message: data.endReason || (data.winnerTeam === "DEVELOPERS" ? "Developers Win!" : "Mafia Wins!")
+      });
+    };
 
-        /*
-         * Don't overwrite our local execution
-         * result unnecessarily if this is a result
-         * from another player.
-         *
-         * You can remove this condition if you want
-         * everybody to see every player's result.
-         */
-        if (author !== username) {
-          return;
-        }
+    socket.on("game:started", handleGameStartedEvent);
+    socket.on("room:game_started", handleGameStartedEvent);
+    socket.on("room:phase_changed", handlePhaseChanged);
+    socket.on("meeting:started", handleMeetingStarted);
+    socket.on("meeting:vote_cast", handleVoteCast);
+    socket.on("meeting:result", handleMeetingResult);
+    socket.on("game:finished", handleGameFinished);
 
-        setExecutionResult({
-          status: passed
-            ? "success"
-            : "failed",
-
-          passed: Boolean(passed),
-
-          stdout:
-            details || "",
-
-          stderr: "",
-        });
-      }
-    );
-
-    /*
-     * ------------------------------------------
-     * SCORE UPDATE
-     * ------------------------------------------
-     */
     socket.on(
       "score:updated",
       (data) => {
@@ -539,18 +447,9 @@ export default function MonacoEditorPage() {
           data
         );
 
-        /*
-         * You can connect this to a leaderboard
-         * state later.
-         */
       }
     );
 
-    /*
-     * ------------------------------------------
-     * GAME ERROR
-     * ------------------------------------------
-     */
     socket.on(
       "game:error",
       ({ message }) => {
@@ -570,11 +469,6 @@ export default function MonacoEditorPage() {
       }
     );
 
-    /*
-     * ------------------------------------------
-     * CODE ERROR
-     * ------------------------------------------
-     */
     socket.on(
       "code:error",
       ({ message }) => {
@@ -594,11 +488,6 @@ export default function MonacoEditorPage() {
       }
     );
 
-    /*
-     * ------------------------------------------
-     * DISCONNECT
-     * ------------------------------------------
-     */
     socket.on(
       "disconnect",
       (reason) => {
@@ -611,11 +500,6 @@ export default function MonacoEditorPage() {
       }
     );
 
-    /*
-     * ------------------------------------------
-     * CONNECTION ERROR
-     * ------------------------------------------
-     */
     socket.on(
       "connect_error",
       (error) => {
@@ -628,39 +512,31 @@ export default function MonacoEditorPage() {
       }
     );
 
-    /*
-     * ------------------------------------------
-     * CLEANUP
-     * ------------------------------------------
-     */
     return () => {
-      console.log(
-        "Cleaning up Socket.IO connection."
-      );
-
-      socket.removeAllListeners();
-      socket.disconnect();
-
-      if (
-        socketRef.current === socket
-      ) {
-        socketRef.current = null;
-      }
-
-      setConnected(false);
+      console.log("Cleaning up editor socket listeners.");
+      socket.off("connect", handleConnect);
+      socket.off("code:updated");
+      socket.off("test:result");
+      socket.off("sabotage:effect");
+      socket.off("room:player_joined");
+      socket.off("room:player_left");
+      socket.off("game:started");
+      socket.off("room:game_started");
+      socket.off("room:phase_changed");
+      socket.off("meeting:started");
+      socket.off("meeting:vote_cast");
+      socket.off("meeting:result");
+      socket.off("game:finished");
+      socket.off("score:updated");
+      socket.off("game:error");
+      socket.off("code:error");
+      socket.off("disconnect");
+      socket.off("connect_error");
     };
   }, [roomCode, username]);
 
-  /*
-   * ==========================================
-   * FALLBACK CHALLENGE LOADING
-   *
-   * This is useful if the editor is opened
-   * directly rather than through game:started.
-   * ==========================================
-   */
   useEffect(() => {
-    if (!roomCode) {
+    if (!roomCode || challenge) {
       setLoadingChallenge(false);
       return;
     }
@@ -690,6 +566,20 @@ export default function MonacoEditorPage() {
         }
 
         setChallenge(data);
+
+        if (data.test_cases && Array.isArray(data.test_cases)) {
+          setTestCases(
+            data.test_cases.map((tc, idx) => ({
+              id: idx + 1,
+              name: tc.name || `Test Case ${idx + 1}`,
+              input: tc.input,
+              expected: tc.expected,
+              actual: undefined,
+              status: "NOT RUN",
+              passed: false
+            }))
+          );
+        }
 
         const challengeLanguage =
           data.language?.toLowerCase() ===
@@ -743,11 +633,6 @@ export default function MonacoEditorPage() {
     loadChallenge();
   }, [roomCode]);
 
-  /*
-   * ==========================================
-   * RUN / SUBMIT CODE
-   * ==========================================
-   */
   const runCode = async (
     submit = false
   ) => {
@@ -801,10 +686,6 @@ export default function MonacoEditorPage() {
     setExecutionResult(null);
 
     try {
-      /*
-       * Actual execution happens through
-       * your REST API.
-       */
       const response =
         await fetch(
           `${API_URL}/api/run-code`,
@@ -862,12 +743,13 @@ export default function MonacoEditorPage() {
         setTestCases(
           data.results.map((r, idx) => ({
             id: idx + 1,
-            name: `Test Case ${idx + 1}`,
-            input: testCases[idx]?.input || { test: idx + 1 },
+            name: r.name || `Test Case ${idx + 1}`,
+            input: r.input !== undefined ? r.input : testCases[idx]?.input,
             expected: r.expected,
             actual: r.actual,
             status: r.passed ? "PASSED" : "FAILED",
-            passed: r.passed
+            passed: r.passed,
+            error: r.error
           }))
         );
       } else {
@@ -906,6 +788,7 @@ export default function MonacoEditorPage() {
         author: username,
         authorRole: playerRole,
         passed,
+        submit,
         details: stderr || output || (passed ? "All tests passed!" : "Tests failed."),
         code: currentCode
       });
@@ -936,9 +819,6 @@ export default function MonacoEditorPage() {
           "Unable to execute code.",
       });
 
-      /*
-       * Record failed execution in replay.
-       */
       socketRef.current?.emit(
         "test:run",
         {
@@ -964,11 +844,6 @@ export default function MonacoEditorPage() {
     }
   };
 
-  /*
-   * ==========================================
-   * MONACO MOUNT
-   * ==========================================
-   */
   const handleEditorMount = (
     editor
   ) => {
@@ -983,11 +858,6 @@ export default function MonacoEditorPage() {
     }, 100);
   };
 
-  /*
-   * ==========================================
-   * LOCAL CODE CHANGE
-   * ==========================================
-   */
   const handleCodeChange = (
     value
   ) => {
@@ -996,9 +866,6 @@ export default function MonacoEditorPage() {
 
     setCode(newCode);
 
-    /*
-     * Don't rebroadcast remote changes.
-     */
     if (
       isRemoteUpdate.current
     ) {
@@ -1012,20 +879,6 @@ export default function MonacoEditorPage() {
       return;
     }
 
-    /*
-     * Your backend expects:
-     *
-     * code:edit
-     *
-     * {
-     *   roomCode,
-     *   author,
-     *   authorRole,
-     *   code,
-     *   details,
-     *   activeLines
-     * }
-     */
     socketRef.current?.emit(
       "code:edit",
       {
@@ -1048,10 +901,26 @@ export default function MonacoEditorPage() {
     );
   };
 
+  const totalRoundTime =
+    initialGameData?.room?.timeLimit ||
+    initialGameData?.timeLimit ||
+    600;
+
+  const powerupCooldownSec = Math.max(15, Math.round(totalRoundTime / 5));
+
+  const formatCooldownLabel = (secs) => {
+    if (secs >= 60) {
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      return s > 0 ? `${m}m ${s}s` : `${m}m`;
+    }
+    return `${secs}s`;
+  };
+
   const handleTriggerPowerup = (ability) => {
     if (cooldowns[ability] > 0) return;
 
-    setCooldowns((prev) => ({ ...prev, [ability]: 15 }));
+    setCooldowns((prev) => ({ ...prev, [ability]: powerupCooldownSec }));
 
     const timer = setInterval(() => {
       setCooldowns((prev) => {
@@ -1073,11 +942,6 @@ export default function MonacoEditorPage() {
     }
   };
 
-  /*
-   * ==========================================
-   * LANGUAGE CHANGE
-   * ==========================================
-   */
   const handleLanguageChange = (
     event
   ) => {
@@ -1091,10 +955,6 @@ export default function MonacoEditorPage() {
         newLang
       ] || "";
 
-    /*
-     * Update Monaco without causing
-     * a second code:edit event.
-     */
     isRemoteUpdate.current =
       true;
 
@@ -1111,13 +971,6 @@ export default function MonacoEditorPage() {
         false;
     }, 0);
 
-    /*
-     * Your backend currently has no
-     * language field in code:edit.
-     *
-     * Therefore we can send the code
-     * through the existing event.
-     */
     if (
       !roomCode ||
       !username
@@ -1147,11 +1000,6 @@ export default function MonacoEditorPage() {
     );
   };
 
-  /*
-   * ==========================================
-   * RESET CODE
-   * ==========================================
-   */
   const handleResetCode = () => {
     const template =
       STARTER_TEMPLATES[
@@ -1160,10 +1008,6 @@ export default function MonacoEditorPage() {
 
     setCode(template);
 
-    /*
-     * Don't rebroadcast Monaco's internal
-     * setValue as a separate event.
-     */
     isRemoteUpdate.current =
       true;
 
@@ -1194,13 +1038,31 @@ export default function MonacoEditorPage() {
     });
   };
 
+  const handleCastVote = (targetUsername) => {
+    if (hasVoted) return;
+    setHasVoted(true);
+    setVotes((prev) => ({ ...prev, [username]: targetUsername }));
+    socketRef.current?.emit("meeting:vote", {
+      roomCode,
+      voterName: username,
+      targetUsername
+    });
+  };
+
+  const handleFinishVoting = () => {
+    socketRef.current?.emit("meeting:finish", { roomCode });
+  };
+
+  const handleFinishSabotageEarly = () => {
+    socketRef.current?.emit("sabotage:finish_early", { roomCode });
+  };
+
   const passedCount = testCases.filter((t) => t.status === "PASSED").length;
 
   return (
     <div className={`${styles.editorWrapper} ${isGlitched ? styles.glitchActive : ""}`}>
       {isGlitched && <div className={styles.glitchOverlay} />}
 
-      {/* ==================== TOP BAR ==================== */}
       <header className={styles.topBar}>
         <div className={styles.leftControls}>
           <div className={styles.brand}>
@@ -1222,17 +1084,55 @@ export default function MonacoEditorPage() {
 
         <div className={styles.rightControls}>
           <div className={styles.timerBadge}>
-            <Timer size={16} color="#ffa116" />
-            <span className={styles.timerDisplay}>{formatTime(seconds)}</span>
+            <Timer
+              size={16}
+              color={
+                phase === "SABOTAGE"
+                  ? (playerRole === "MAFIA" ? "#ef4444" : "#eab308")
+                  : (phase === "VOTING" ? "#ef4444" : "#ffa116")
+              }
+            />
+            <span
+              className={styles.timerDisplay}
+              style={{
+                color:
+                  phase === "SABOTAGE"
+                    ? (playerRole === "MAFIA" ? "#ef4444" : "#eab308")
+                    : (phase === "VOTING" ? "#ef4444" : undefined),
+                fontWeight: phase === "SABOTAGE" || phase === "VOTING" ? "bold" : undefined
+              }}
+            >
+              {phase === "SABOTAGE"
+                ? `SABOTAGE: ${formatTime(phaseSeconds)}`
+                : (phase === "VOTING"
+                    ? `VOTING: ${formatTime(phaseSeconds)}`
+                    : formatTime(phaseSeconds))}
+            </span>
           </div>
 
           <div className={styles.divider} />
+
+          {phase === "SABOTAGE" && playerRole === "MAFIA" && (
+            <button
+              type="button"
+              className={styles.runBtn}
+              onClick={handleFinishSabotageEarly}
+              style={{
+                backgroundColor: "#dc2626",
+                color: "#fff",
+                borderColor: "#b91c1c",
+                fontWeight: "600"
+              }}
+            >
+              Finish Sabotage Early
+            </button>
+          )}
 
           <button
             type="button"
             className={styles.runBtn}
             onClick={() => runCode(false)}
-            disabled={isRunning || isFunctionLocked}
+            disabled={isRunning || isFunctionLocked || phase === "SABOTAGE" || phase === "VOTING"}
           >
             <PlayCircle size={15} />
             {isRunning ? "Running..." : "Run"}
@@ -1242,8 +1142,20 @@ export default function MonacoEditorPage() {
             type="button"
             className={styles.submitBtn}
             onClick={() => runCode(true)}
-            disabled={isRunning || (!allTestsPassed && !isFalseGreen) || isFunctionLocked}
-            title={!allTestsPassed && !isFalseGreen ? "All test cases must pass before submitting" : "Submit Solution"}
+            disabled={
+              isRunning ||
+              phase === "SABOTAGE" ||
+              phase === "VOTING" ||
+              (!allTestsPassed && !isFalseGreen) ||
+              isFunctionLocked
+            }
+            title={
+              phase === "SABOTAGE"
+                ? "Submissions locked during initial sabotage phase"
+                : (!allTestsPassed && !isFalseGreen
+                    ? "All test cases must pass before submitting"
+                    : "Submit Solution")
+            }
           >
             <Send size={14} />
             {isRunning ? "Submitting..." : "Submit"}
@@ -1251,9 +1163,76 @@ export default function MonacoEditorPage() {
         </div>
       </header>
 
-      {/* ==================== MAIN LAYOUT ==================== */}
       <main className={styles.mainLayout}>
         <div className={styles.editorColumn}>
+          {phase === "SABOTAGE" && playerRole === "MAFIA" && (
+            <div
+              style={{
+                padding: "12px 18px",
+                backgroundColor: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: "8px",
+                marginBottom: "12px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center"
+              }}
+            >
+              <span style={{ color: "#991b1b", fontSize: "0.875rem", fontWeight: "500" }}>
+                😈 <strong>EXCLUSIVE SABOTAGE WINDOW:</strong> You have exclusive write access to tamper with the codebase before developers enter! ({phaseSeconds}s remaining)
+              </span>
+              <button
+                type="button"
+                onClick={handleFinishSabotageEarly}
+                style={{
+                  padding: "6px 14px",
+                  backgroundColor: "#dc2626",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "6px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                  fontSize: "0.8rem"
+                }}
+              >
+                Finish Early
+              </button>
+            </div>
+          )}
+
+          {phase === "SABOTAGE" && playerRole !== "MAFIA" && (
+            <div
+              style={{
+                padding: "14px 18px",
+                backgroundColor: "#fefce8",
+                border: "1px solid #fde047",
+                borderRadius: "8px",
+                marginBottom: "12px"
+              }}
+            >
+              <span style={{ color: "#854d0e", fontSize: "0.875rem", fontWeight: "500" }}>
+                🔒 <strong>SYSTEM INFILTRATION IN PROGRESS:</strong> The Imposter is currently tampering with the codebase in secret. Your editor is locked and code changes are hidden. The modified codebase will be revealed when infiltration concludes in <strong>{phaseSeconds}s</strong>.
+              </span>
+            </div>
+          )}
+
+          {phase === "DEBUG" && (
+            <div
+              style={{
+                padding: "10px 16px",
+                backgroundColor: "#f0fdf4",
+                border: "1px solid #bbf7d0",
+                borderRadius: "8px",
+                marginBottom: "12px",
+                color: "#166534",
+                fontSize: "0.85rem",
+                fontWeight: "500"
+              }}
+            >
+              🛠️ <strong>COLLABORATIVE DEBUG PHASE:</strong> Infiltration complete! The modified codebase is now live. Work together to diagnose bugs and pass all unit tests before time runs out!
+            </div>
+          )}
+
           {isFunctionLocked && (
             <div className={styles.functionLockBanner}>
               🔒 FUNCTION LOCKED: Lines 4-8 frozen by Mafia Sabotage!
@@ -1278,7 +1257,7 @@ export default function MonacoEditorPage() {
               width="100%"
               language={language}
               value={code}
-              theme="vs-dark"
+              theme="vs"
               onMount={(ed) => (editorRef.current = ed)}
               onChange={handleCodeChange}
               options={{
@@ -1288,13 +1267,12 @@ export default function MonacoEditorPage() {
                 tabSize: 2,
                 wordWrap: "on",
                 lineNumbers: "on",
-                readOnly: isFunctionLocked
+                readOnly: isFunctionLocked || (phase === "SABOTAGE" && playerRole !== "MAFIA") || phase === "VOTING" || phase === "FINISHED"
               }}
             />
           </div>
         </div>
 
-        {/* ==================== RIGHT SIDE TEST CASES PANEL ==================== */}
         <aside className={styles.testSidePanel}>
           <div className={styles.testSideHeader}>
             <h3 className={styles.testSideTitle}>Test Cases</h3>
@@ -1345,12 +1323,20 @@ export default function MonacoEditorPage() {
                       </pre>
                     </div>
                   )}
+
+                  {test.error && (
+                    <div className={styles.testDetailRow}>
+                      <span className={styles.testLabel}>Exception / Trace:</span>
+                      <pre className={`${styles.testCode} ${styles.codeError}`}>
+                        {test.error}
+                      </pre>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
 
-          {/* ==================== DEDICATED MAFIA TACTICAL POWERUPS PANEL ==================== */}
           {playerRole === "MAFIA" && (
             <section className={styles.mafiaPanel}>
               <div className={styles.mafiaHeader}>
@@ -1367,7 +1353,9 @@ export default function MonacoEditorPage() {
                 >
                   <span>Screen Glitch</span>
                   <span className={styles.powerupDesc}>
-                    {cooldowns.SCREEN_GLITCH > 0 ? `${cooldowns.SCREEN_GLITCH}s` : "Glitch Displays (6s)"}
+                    {cooldowns.SCREEN_GLITCH > 0
+                      ? `${cooldowns.SCREEN_GLITCH}s`
+                      : `Glitch (CD: ${formatCooldownLabel(powerupCooldownSec)})`}
                   </span>
                 </button>
 
@@ -1379,7 +1367,9 @@ export default function MonacoEditorPage() {
                 >
                   <span>False Green</span>
                   <span className={styles.powerupDesc}>
-                    {cooldowns.FALSE_GREEN > 0 ? `${cooldowns.FALSE_GREEN}s` : "Fake Passed (15s)"}
+                    {cooldowns.FALSE_GREEN > 0
+                      ? `${cooldowns.FALSE_GREEN}s`
+                      : `Fake Pass (CD: ${formatCooldownLabel(powerupCooldownSec)})`}
                   </span>
                 </button>
 
@@ -1391,7 +1381,9 @@ export default function MonacoEditorPage() {
                 >
                   <span>Freeze Editor</span>
                   <span className={styles.powerupDesc}>
-                    {cooldowns.FUNCTION_LOCK > 0 ? `${cooldowns.FUNCTION_LOCK}s` : "Lock Code (10s)"}
+                    {cooldowns.FUNCTION_LOCK > 0
+                      ? `${cooldowns.FUNCTION_LOCK}s`
+                      : `Lock Code (CD: ${formatCooldownLabel(powerupCooldownSec)})`}
                   </span>
                 </button>
 
@@ -1403,7 +1395,9 @@ export default function MonacoEditorPage() {
                 >
                   <span>Code Radar</span>
                   <span className={styles.powerupDesc}>
-                    {cooldowns.CODE_RADAR > 0 ? `${cooldowns.CODE_RADAR}s` : "Scan Heatmap (8s)"}
+                    {cooldowns.CODE_RADAR > 0
+                      ? `${cooldowns.CODE_RADAR}s`
+                      : `Heatmap (CD: ${formatCooldownLabel(powerupCooldownSec)})`}
                   </span>
                 </button>
               </div>
@@ -1412,16 +1406,14 @@ export default function MonacoEditorPage() {
         </aside>
       </main>
 
-      {/* ==================== VOTING TRIBUNAL MODAL ==================== */}
       {showVotingModal && (
         <div className={styles.modalOverlay}>
           <div className={styles.modalContent}>
             <div className={styles.modalHeader}>
-              <h2>Emergency Voting Tribunal</h2>
-              <p>Review player audit history, identify the hidden Mafia, and cast your vote.</p>
+              <h2>🚨 Emergency Voting Tribunal ({formatTime(phaseSeconds)})</h2>
+              <p>Deliberate on the audit logs, identify the hidden Imposter, and cast your vote before time expires!</p>
             </div>
 
-            {/* Audit Log Summary */}
             <div>
               <div className={styles.sectionTitle}>User Activity Audit Summary</div>
               <div className={styles.auditContainer}>
@@ -1435,7 +1427,6 @@ export default function MonacoEditorPage() {
               </div>
             </div>
 
-            {/* Ejection Result Banner */}
             {ejectionResult && (
               <div
                 className={`${styles.ejectionBanner} ${
@@ -1446,16 +1437,21 @@ export default function MonacoEditorPage() {
               </div>
             )}
 
-            {/* Suspect Voting Cards */}
             <div>
               <div className={styles.sectionTitle}>Operatives in Room</div>
               <div className={styles.suspectGrid}>
                 {players.map((p, idx) => {
-                  const voteCnt = votes[p.username] || 0;
+                  const voteCnt = Object.values(votes).filter((v) => v === p.username).length;
+                  const isUser = p.username === username;
+                  const isDead = p.isAlive === false;
                   return (
-                    <div key={p.username || idx} className={styles.suspectCard}>
+                    <div
+                      key={p.username || idx}
+                      className={styles.suspectCard}
+                      style={{ opacity: isDead ? 0.45 : 1 }}
+                    >
                       <div className={styles.suspectName}>
-                        {p.username} {p.isHost && "(Host)"}
+                        {p.username} {p.isHost && "(Host)"} {isDead && "💀 (Eliminated)"}
                       </div>
                       <div style={{ fontSize: "0.75rem", color: "hsl(var(--muted-foreground))" }}>
                         Votes Received: {voteCnt}
@@ -1464,13 +1460,32 @@ export default function MonacoEditorPage() {
                         type="button"
                         className={styles.voteButton}
                         onClick={() => handleCastVote(p.username)}
-                        disabled={hasVoted || p.username === username}
+                        disabled={hasVoted || isUser || isDead}
                       >
-                        {hasVoted ? "VOTE CAST" : "VOTE SUSPECT"}
+                        {votes[username] === p.username
+                          ? "YOUR VOTE"
+                          : hasVoted
+                          ? "VOTE CAST"
+                          : "VOTE SUSPECT"}
                       </button>
                     </div>
                   );
                 })}
+
+                <div className={styles.suspectCard}>
+                  <div className={styles.suspectName}>Skip Vote / Abstain</div>
+                  <div style={{ fontSize: "0.75rem", color: "hsl(var(--muted-foreground))" }}>
+                    Votes: {Object.values(votes).filter((v) => v === "SKIP").length}
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.voteButton}
+                    onClick={() => handleCastVote("SKIP")}
+                    disabled={hasVoted}
+                  >
+                    {votes[username] === "SKIP" ? "VOTED SKIP" : "SKIP VOTE"}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1487,33 +1502,49 @@ export default function MonacoEditorPage() {
                 className={styles.submitBtn}
                 onClick={() => setShowVotingModal(false)}
               >
-                Return to Editor
+                View Editor
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ==================== VICTORY / GAME OVER MODAL ==================== */}
       {victoryData && (
         <div className={styles.modalOverlay}>
           <div className={styles.modalContent} style={{ textAlign: "center", maxWidth: "520px" }}>
             <div className={styles.modalHeader}>
-              <h2 style={{ color: "#22c55e", fontSize: "1.75rem" }}>
+              <h2
+                style={{
+                  color: victoryData.winnerTeam === "DEVELOPERS" ? "#22c55e" : "#ef4444",
+                  fontSize: "1.75rem"
+                }}
+              >
                 {victoryData.winnerTeam === "DEVELOPERS" ? "DEVELOPER VICTORY" : "MAFIA VICTORY"}
               </h2>
               <p>{victoryData.message}</p>
             </div>
 
-            <div style={{ padding: "16px", backgroundColor: "hsl(var(--background))", borderRadius: "8px" }}>
-              <div className={styles.sectionTitle}>XP & Score Allocations</div>
+            <div style={{ padding: "16px", backgroundColor: "#f8fafc", border: "1px solid #e4e4e7", borderRadius: "8px" }}>
+              <div className={styles.sectionTitle}>Operative Roster & Roles</div>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px", textAlign: "left" }}>
-                {players.map((p, idx) => (
-                  <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.875rem" }}>
-                    <span>{p.username} ({p.role || "DEVELOPER"})</span>
-                    <span style={{ color: "#22c55e", fontWeight: "600" }}>+150 XP</span>
-                  </div>
-                ))}
+                {players.map((p, idx) => {
+                  const isWinner =
+                    (victoryData.winnerTeam === "DEVELOPERS" && p.role === "DEVELOPER") ||
+                    (victoryData.winnerTeam === "MAFIA" && p.role === "MAFIA");
+                  const earnedXp = isWinner ? (p.role === "MAFIA" ? 500 : 300) : 0;
+                  return (
+                    <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.875rem" }}>
+                      <span>
+                        {p.username} - <strong style={{ color: p.role === "MAFIA" ? "#ef4444" : "#22c55e" }}>{p.role || "DEVELOPER"}</strong>
+                      </span>
+                      {isWinner ? (
+                        <span style={{ color: "#22c55e", fontWeight: "600" }}>+{earnedXp} XP (Victory)</span>
+                      ) : (
+                        <span style={{ color: "#ef4444", fontWeight: "600" }}>0 XP (Defeat)</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -1529,7 +1560,6 @@ export default function MonacoEditorPage() {
         </div>
       )}
 
-      {/* ==================== STATUS BAR ==================== */}
       <footer className={styles.statusBar}>
         <div className={styles.statusIndicator}>
           <span className={connected ? styles.dotConnected : styles.dotDisconnected} />

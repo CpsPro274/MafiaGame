@@ -6,7 +6,6 @@ import { fileURLToPath } from "url";
 const { Client } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Common passwords to test
 const passwords = [
   "postgres",
   "password",
@@ -52,7 +51,6 @@ async function autoFixEnv() {
             console.log(`Working Password: "${password}"`);
             console.log("=========================================\n");
 
-            // Update .env file automatically
             const envPath = path.resolve(__dirname, ".env");
             const newEnvContent = `# Server Configuration
 PORT=5000

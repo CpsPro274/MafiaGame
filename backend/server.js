@@ -9,6 +9,8 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
+import { execFile } from "child_process";
+import vm from "vm";
 
 import { testDbConnection, query } from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
@@ -20,7 +22,12 @@ import {
   leaveRoom,
   startGame,
   getRoom,
-  setRoomDifficulty
+  setRoomDifficulty,
+  advanceToDebugPhase,
+  advanceToVotingPhase,
+  recordVote,
+  tallyVotesAndEvaluate,
+  completeGame
 } from "./services/roomManager.js";
 import {
   saveRoomToDb,
@@ -33,14 +40,13 @@ import {
   recordEvent,
   getReplay
 } from "./services/replayManager.js";
-import { getChallengeByDifficulty } from "./services/challengeService.js";
-import { initScores, awardPoints, getLeaderboard } from "./services/scoreManager.js";
+import { getChallengeByDifficulty, CHALLENGES } from "./services/challengeService.js";
+import { initScores, awardPoints, finalizeMatchScores, getLeaderboard } from "./services/scoreManager.js";
 
 const app = express();
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps, curl, or same-origin)
     if (!origin) return callback(null, true);
     return callback(null, origin);
   },
@@ -65,27 +71,21 @@ const io = new Server(httpServer, {
   transports: ["websocket", "polling"]
 });
 
-// Provide io instance to Express routes
 app.set("io", io);
 
-// ==========================================
-// REST API ROUTES
-// ==========================================
 app.use("/api/auth", authRoutes);
 app.use("/api/challenges", challengeRoutes);
-app.use("/api", roomRoutes); // Mounts /api/create-room, /api/join-room, /api/rooms
+app.use("/api", roomRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Fetch Replay Timeline for a match
 app.get("/api/matches/:roomCode/replay", (req, res) => {
   const replay = getReplay(req.params.roomCode);
   res.json(replay);
 });
 
-// Check if a room exists before joining
 app.get("/api/rooms/:roomCode", (req, res) => {
   const room = getRoom(req.params.roomCode);
   if (!room) {
@@ -101,86 +101,393 @@ app.get("/api/rooms/:roomCode", (req, res) => {
   });
 });
 
-// Code execution endpoint for running test suites
-app.post("/api/run-code", (req, res) => {
-  const { roomId, userId, code, language, submit } = req.body;
+const PYTHON_CONTAINER_HARNESS = `
+import sys, json
+from typing import List, Dict, Tuple, Set, Optional, Any
 
-  const normCode = roomId?.trim().toUpperCase();
-  const room = getRoom(normCode);
-  const challenge = room?.challenge || getChallengeByDifficulty(room?.difficulty || "EASY");
+def deep_equal(a, b, tol=1e-5):
+    if a == b: return True
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)): return abs(a - b) <= tol
+    if isinstance(a, dict) and isinstance(b, dict):
+        if len(a) != len(b): return False
+        return all(k in b and deep_equal(a[k], b[k], tol) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        if len(a) != len(b): return False
+        # Order-insensitive check for two-element index lists (e.g., LeetCode Two Sum)
+        if len(a) == 2 and all(isinstance(x, int) for x in a) and all(isinstance(y, int) for y in b):
+            if sorted(a) == sorted(b):
+                return True
+        return all(deep_equal(x, y, tol) for x, y in zip(a, b))
+    return False
 
-  const testCases = challenge?.test_cases || [
-    { input: { nums: [2, 7, 11, 15], target: 9 }, expected: [0, 1] },
-    { input: { nums: [3, 2, 4], target: 6 }, expected: [1, 2] },
-    { input: { nums: [3, 3], target: 6 }, expected: [0, 1] }
-  ];
+try:
+    payload = json.loads(sys.stdin.read())
+    user_code = payload.get("code", "")
+    tests = payload.get("tests", [])
+except Exception as e:
+    print(json.dumps({"global_error": "Payload parse error: " + str(e)}))
+    sys.exit(0)
 
-  let allPassed = true;
-  let stdout = "Executing unit test suite...\n";
-  let stderr = "";
+scope = {
+    "List": List,
+    "Dict": Dict,
+    "Tuple": Tuple,
+    "Set": Set,
+    "Optional": Optional,
+    "Any": Any
+}
+results = []
 
-  const results = testCases.map((tc, index) => {
-    let passed = false;
-    let actual = null;
+try:
+    exec(user_code, scope)
+    fn = None
+    candidate_names = [
+        "twoSum", "two_sum",
+        "lengthOfLongestSubstring", "length_of_longest_substring",
+        "trap", "trapRainWater", "trap_rain_water",
+        "calculate_cart_total", "calculateCartTotal",
+        "validate_auth_token", "validateAuthToken",
+        "process_ledger_transactions", "processLedgerTransactions"
+    ]
+    # Check for LeetCode class Solution
+    if "Solution" in scope and isinstance(scope["Solution"], type):
+        try:
+            sol_instance = scope["Solution"]()
+            for name in candidate_names:
+                if hasattr(sol_instance, name) and callable(getattr(sol_instance, name)):
+                    fn = getattr(sol_instance, name)
+                    break
+            if not fn:
+                for attr in dir(sol_instance):
+                    if not attr.startswith("__") and callable(getattr(sol_instance, attr)):
+                        fn = getattr(sol_instance, attr)
+                        break
+        except Exception:
+            pass
 
-    try {
-      if (language === "javascript" || !language) {
-        const runner = new Function(
-          "input",
-          `${code}; if (typeof twoSum !== 'undefined') return twoSum(input.nums, input.target); if (typeof calculate_cart_total !== 'undefined') return calculate_cart_total(input.items, input.discount_pct); return null;`
-        );
-        actual = runner(tc.input);
-        passed = JSON.stringify(actual) === JSON.stringify(tc.expected);
-      } else {
-        passed = true;
-        actual = tc.expected;
-      }
-    } catch (err) {
-      stderr += `Test ${index + 1} Exception: ${err.message}\n`;
-      passed = false;
+    if not fn:
+        for name in candidate_names:
+            if name in scope and callable(scope[name]):
+                fn = scope[name]
+                break
+    if not fn:
+        for k, v in scope.items():
+            if callable(v) and not k.startswith("__") and not isinstance(v, type):
+                fn = v
+                break
+    if not fn:
+        raise Exception("No callable target function found in submitted Python code.")
+
+    for idx, tc in enumerate(tests):
+        inp = tc.get("input", {})
+        expected = tc.get("expected")
+        try:
+            if isinstance(inp, dict):
+                try:
+                    act = fn(**inp)
+                except TypeError:
+                    try:
+                        act = fn(*inp.values())
+                    except TypeError:
+                        act = fn(inp)
+            elif isinstance(inp, list):
+                act = fn(*inp)
+            else:
+                act = fn(inp)
+            passed = deep_equal(act, expected)
+            results.append({
+                "testCase": idx + 1,
+                "name": tc.get("name", "Test Case " + str(idx + 1)),
+                "passed": passed,
+                "actual": act,
+                "expected": expected,
+                "input": inp,
+                "error": None
+            })
+        except Exception as e:
+            results.append({
+                "testCase": idx + 1,
+                "name": tc.get("name", "Test Case " + str(idx + 1)),
+                "passed": False,
+                "actual": None,
+                "expected": expected,
+                "input": inp,
+                "error": str(e)
+            })
+except Exception as e:
+    print(json.dumps({"global_error": str(e)}))
+    sys.exit(0)
+
+print(json.dumps({"results": results}))
+`;
+
+function parseAndFormatResults(rawStdout, rawStderr, testCases, stdout, stderr, resolve) {
+  try {
+    const parsed = JSON.parse(rawStdout.trim());
+    if (parsed.global_error) {
+      stderr += `Execution Exception: ${parsed.global_error}\n`;
+      return resolve({
+        allPassed: false,
+        stdout: stdout + "Execution halted on syntax/runtime error.\n",
+        stderr,
+        results: testCases.map((tc, idx) => ({
+          testCase: idx + 1,
+          name: tc.name || `Test Case ${idx + 1}`,
+          passed: false,
+          actual: null,
+          expected: tc.expected,
+          input: tc.input,
+          error: parsed.global_error
+        }))
+      });
     }
 
-    if (!passed) allPassed = false;
-    stdout += `Test ${index + 1}: ${passed ? "PASSED" : "FAILED"}\n`;
-
-    return { testCase: index + 1, passed, actual, expected: tc.expected };
-  });
-
-  if (allPassed) {
-    stdout += "\nALL UNIT TESTS PASSED!";
-  } else {
-    stdout += "\nSOME TESTS FAILED.";
-  }
-
-  recordEvent(normCode, {
-    author: userId || "Developer",
-    action: allPassed ? "TESTS_PASSED" : "TESTS_FAILED",
-    details: `${userId || "Developer"} ran test suite (${allPassed ? "PASSED 3/3" : "FAILED"})`,
-    code
-  });
-
-  if (normCode) {
-    io.to(normCode).emit("test:run", {
-      roomCode: normCode,
-      author: userId,
-      passed: allPassed,
-      code
+    const results = parsed.results || [];
+    const allPassed = results.length > 0 && results.every((r) => r.passed);
+    results.forEach((r) => {
+      stdout += `Test ${r.testCase} [${r.name}]: ${r.passed ? "PASSED" : "FAILED"}\n`;
+      if (r.error) stderr += `Test ${r.testCase} Exception: ${r.error}\n`;
+    });
+    stdout += allPassed ? "\nALL UNIT TESTS PASSED!" : "\nSOME TESTS FAILED.";
+    resolve({ allPassed, stdout, stderr, results });
+  } catch (parseErr) {
+    stderr += `Output Parse Error: ${parseErr.message}\n${rawStdout}`;
+    resolve({
+      allPassed: false,
+      stdout: stdout + "Failed to parse test outputs.\n",
+      stderr,
+      results: testCases.map((tc, idx) => ({
+        testCase: idx + 1,
+        name: tc.name || `Test Case ${idx + 1}`,
+        passed: false,
+        actual: null,
+        expected: tc.expected,
+        input: tc.input,
+        error: parseErr.message
+      }))
     });
   }
+}
 
-  return res.json({
-    success: true,
-    allPassed,
-    stdout,
-    stderr,
-    results,
-    status: allPassed ? "success" : "failed"
+function runCodeInContainer(code, testCases) {
+  return new Promise((resolve) => {
+    let stdout = "🐳 Executing in isolated container (Dockerfile.runner-python)...\n";
+    let stderr = "";
+
+    const dockerArgs = [
+      "run",
+      "--rm",
+      "-i",
+      "--network",
+      "none",
+      "--memory",
+      "128m",
+      "runner-python:latest",
+      "python3",
+      "-c",
+      PYTHON_CONTAINER_HARNESS
+    ];
+
+    const proc = execFile("docker", dockerArgs, { timeout: 8000, maxBuffer: 1024 * 1024 }, (dockerErr, dockerStdout, dockerStderr) => {
+      if (dockerErr) {
+        console.warn("Docker execution failed, falling back to local python3:", dockerStderr || dockerErr.message);
+        const localProc = execFile("python3", ["-c", PYTHON_CONTAINER_HARNESS], { timeout: 5000, maxBuffer: 1024 * 1024 }, (localErr, localStdout, localStderr) => {
+          if (localErr) {
+            stderr += `Execution Error: ${localStderr || localErr.message}\n`;
+            return resolve({
+              allPassed: false,
+              stdout: stdout + "Execution failed.\n",
+              stderr,
+              results: testCases.map((tc, idx) => ({
+                testCase: idx + 1,
+                name: tc.name || `Test Case ${idx + 1}`,
+                passed: false,
+                actual: null,
+                expected: tc.expected,
+                input: tc.input,
+                error: localStderr || localErr.message
+              }))
+            });
+          }
+          parseAndFormatResults(localStdout, localStderr, testCases, stdout, stderr, resolve);
+        });
+        localProc.stdin.write(JSON.stringify({ code, tests: testCases }));
+        localProc.stdin.end();
+        return;
+      }
+
+      parseAndFormatResults(dockerStdout, dockerStderr, testCases, stdout, stderr, resolve);
+    });
+
+    proc.stdin.write(JSON.stringify({ code, tests: testCases }));
+    proc.stdin.end();
   });
+}
+
+app.post("/api/run-code", async (req, res) => {
+  try {
+    const { roomId, userId, code, challengeId, difficulty, submit } = req.body;
+
+    const normCode = roomId ? roomId.toString().trim().toUpperCase() : null;
+    const room = normCode ? getRoom(normCode) : null;
+    let challenge = room?.challenge;
+    if (!challenge && challengeId) {
+      challenge = Object.values(CHALLENGES).find((c) => c.id === Number(challengeId));
+    }
+    if (!challenge) {
+      challenge = getChallengeByDifficulty(difficulty || room?.difficulty || "MEDIUM");
+    }
+    const testCases = challenge?.test_cases || [];
+
+    const { allPassed, stdout, stderr, results } = await runCodeInContainer(code, testCases);
+
+    if (normCode) {
+      recordEvent(normCode, {
+        author: userId || "Developer",
+        action: allPassed ? "TESTS_PASSED" : "TESTS_FAILED",
+        details: `${userId || "Developer"} ran test suite (${allPassed ? "PASSED ALL" : "FAILED"})`,
+        code
+      });
+
+      io.to(normCode).emit("test:run", {
+        roomCode: normCode,
+        author: userId,
+        passed: allPassed,
+        code,
+        results
+      });
+    }
+
+    return res.json({
+      success: true,
+      allPassed,
+      stdout,
+      stderr,
+      results,
+      status: allPassed ? "success" : "failed"
+    });
+  } catch (err) {
+    console.error("Run code exception:", err);
+    return res.status(500).json({
+      success: false,
+      allPassed: false,
+      stdout: "",
+      stderr: err.message || "Failed to execute code in container.",
+      results: [],
+      status: "error"
+    });
+  }
 });
 
-// ==========================================
-// REAL-TIME SOCKET.IO ROOM & GAMEPLAY EVENTS
-// ==========================================
+const roomTimers = new Map();
+
+function clearRoomTimer(roomCode) {
+  const norm = roomCode?.trim().toUpperCase();
+  if (roomTimers.has(norm)) {
+    clearTimeout(roomTimers.get(norm).timer);
+    roomTimers.delete(norm);
+  }
+}
+
+function startDebugPhase(io, roomCode) {
+  const norm = roomCode?.trim().toUpperCase();
+  clearRoomTimer(norm);
+
+  const room = advanceToDebugPhase(norm);
+  if (!room) return;
+
+  console.log(`⏱️ [Phase Changed: DEBUG] Room: ${norm} (${room.timeLimit}s)`);
+
+  const codeToReveal = room.currentCode || room.initialCode || "";
+
+  recordEvent(norm, {
+    author: "System",
+    authorRole: "SYSTEM",
+    action: "PHASE_CHANGE",
+    details: "Sabotage phase completed! Infiltrated codebase revealed to all developers.",
+    code: codeToReveal
+  });
+
+  io.to(norm).emit("room:phase_changed", {
+    phase: "DEBUG",
+    timeLimit: room.timeLimit,
+    phaseExpiresAt: room.phaseExpiresAt,
+    code: codeToReveal,
+    message: "Sabotage phase completed! Infiltrated codebase has been revealed. All operatives are now authorized to debug."
+  });
+
+  // Broadcast the revealed code to the entire room so developers see the mafia's edits now
+  io.to(norm).emit("code:updated", {
+    code: codeToReveal,
+    author: "System",
+    activeLines: []
+  });
+
+  const timer = setTimeout(() => {
+    startVotingPhase(io, norm);
+  }, (room.timeLimit || 600) * 1000);
+
+  roomTimers.set(norm, { timer, phase: "DEBUG" });
+}
+
+function startVotingPhase(io, roomCode) {
+  const norm = roomCode?.trim().toUpperCase();
+  clearRoomTimer(norm);
+
+  const room = advanceToVotingPhase(norm);
+  if (!room) return;
+
+  console.log(`🚨 [Phase Changed: VOTING] Room: ${norm} (${room.votingDuration}s)`);
+
+  io.to(norm).emit("room:phase_changed", {
+    phase: "VOTING",
+    votingDuration: room.votingDuration,
+    phaseExpiresAt: room.phaseExpiresAt,
+    message: "Round time expired! Emergency voting tribunal initiated."
+  });
+
+  io.to(norm).emit("meeting:started", {
+    callerName: "ROUND_TIMER_EXPIRED",
+    meetingDurationSec: room.votingDuration
+  });
+
+  const timer = setTimeout(() => {
+    finalizeVoting(io, norm);
+  }, room.votingDuration * 1000);
+
+  roomTimers.set(norm, { timer, phase: "VOTING" });
+}
+
+function finalizeVoting(io, roomCode) {
+  const norm = roomCode?.trim().toUpperCase();
+  clearRoomTimer(norm);
+
+  const result = tallyVotesAndEvaluate(norm);
+  if (!result) return;
+
+  console.log(`⚖️ [Voting Finalized] Room ${norm}: Ejected=${result.ejectedPlayer?.username || "None"}, Winner=${result.winnerTeam}`);
+
+  io.to(norm).emit("meeting:result", {
+    ejectedPlayer: result.ejectedPlayer ? result.ejectedPlayer.username : null,
+    wasMafia: result.wasMafia,
+    winnerTeam: result.winnerTeam,
+    endReason: result.endReason,
+    aliveMafia: result.aliveMafia,
+    aliveDevs: result.aliveDevs,
+    votes: result.votes
+  });
+
+  if (result.winnerTeam) {
+    const finalLeaderboard = finalizeMatchScores(norm, result.winnerTeam);
+    io.to(norm).emit("game:finished", {
+      winnerTeam: result.winnerTeam,
+      endReason: result.endReason,
+      replay: getReplay(norm),
+      leaderboard: finalLeaderboard
+    });
+  }
+}
+
 io.on("connection", (socket) => {
   console.log(`[Socket Connected] ID: ${socket.id}`);
   socket.on("room:create", async ({ username, difficulty = "MEDIUM", maxPlayers = 8, timeLimit = 30, mafiaCount = 1 }, callback) => {
@@ -189,7 +496,6 @@ io.on("connection", (socket) => {
         return callback?.({ success: false, error: "Username is required." });
       }
 
-      // Convert timeLimit from minutes to seconds
       const timeLimitSeconds = Number(timeLimit) > 0 ? Number(timeLimit) * 60 : 1800;
 
       const { room, player } = createRoom(socket.id, username, difficulty, Number(maxPlayers), {
@@ -213,7 +519,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 2. SET DIFFICULTY IN LOBBY
   socket.on("room:set_difficulty", ({ roomCode, difficulty }) => {
     const updatedRoom = setRoomDifficulty(roomCode, difficulty);
     if (updatedRoom) {
@@ -221,7 +526,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 3. JOIN ROOM
   socket.on("room:join", async ({ roomCode, username }, callback) => {
     try {
       if (!roomCode || !username) {
@@ -258,7 +562,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 4. START MATCH & LOAD CHALLENGE BY DIFFICULTY
   socket.on("game:start", async ({ roomCode }, callback) => {
     try {
       const result = startGame(roomCode, socket.id);
@@ -268,30 +571,56 @@ io.on("connection", (socket) => {
 
       const { room } = result;
 
-      // Load curated challenge based on selected difficulty (EASY, MEDIUM, HARD)
       const challengeData = getChallengeByDifficulty(room.difficulty || "MEDIUM");
+      room.challenge = challengeData;
+      room.initialCode = challengeData.buggy_code;
+      room.currentCode = challengeData.buggy_code;
 
-      // Initialize Replay Timeline & Points Manager
-      initTimeline(room.roomCode, challengeData.buggy_code, room.players);
+      initTimeline(room.roomCode, room.initialCode, room.players);
       initScores(room.roomCode, room.players);
 
-      console.log(`[Match Started] Room: ${room.roomCode} (${room.difficulty}) with ${room.players.length} players`);
+      console.log(`[Match Started] Room: ${room.roomCode} (${room.difficulty}) - Initial SABOTAGE phase (30s)`);
 
-      // Emit secret role individually
+      clearRoomTimer(room.roomCode);
+      const timer = setTimeout(() => {
+        startDebugPhase(io, room.roomCode);
+      }, room.sabotageDuration * 1000);
+      roomTimers.set(room.roomCode, { timer, phase: "SABOTAGE" });
+
       room.players.forEach((p) => {
-        io.to(p.socketId).emit("game:started", {
-          roomCode: room.roomCode,
-          role: p.role,
-          room: {
-            ...room,
-            players: room.players.map((other) => ({
-              ...other,
-              role: other.socketId === p.socketId ? other.role : "???"
-            }))
-          },
-          challenge: challengeData,
-          leaderboard: getLeaderboard(room.roomCode)
-        });
+        if (p.socketId) {
+          io.to(p.socketId).emit("game:started", {
+            roomCode: room.roomCode,
+            role: p.role,
+            phase: "SABOTAGE",
+            sabotageDuration: room.sabotageDuration,
+            phaseExpiresAt: room.phaseExpiresAt,
+            room: {
+              ...room,
+              players: room.players.map((other) => ({
+                ...other,
+                role: other.socketId === p.socketId ? other.role : "???"
+              }))
+            },
+            challenge: {
+              ...challengeData,
+              buggy_code: p.role === "MAFIA" ? room.currentCode : room.initialCode
+            },
+            leaderboard: getLeaderboard(room.roomCode)
+          });
+        }
+      });
+
+      io.to(room.roomCode).emit("room:game_started", {
+        roomCode: room.roomCode,
+        challenge: {
+          ...challengeData,
+          buggy_code: room.initialCode
+        },
+        phase: "SABOTAGE",
+        sabotageDuration: room.sabotageDuration,
+        phaseExpiresAt: room.phaseExpiresAt,
+        room
       });
 
       callback?.({ success: true });
@@ -302,9 +631,56 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 5. CODE EDIT IN COLLABORATIVE BUFFER
+  socket.on("sabotage:finish_early", ({ roomCode }) => {
+    const norm = roomCode?.trim().toUpperCase();
+    const room = getRoom(norm);
+    if (room && room.phase === "SABOTAGE") {
+      console.log(`⏩ [Sabotage Finished Early] Room: ${norm} by Mafia operative`);
+      startDebugPhase(io, norm);
+    }
+  });
+
   socket.on("code:edit", ({ roomCode, author, authorRole, code, details, activeLines }) => {
-    recordEvent(roomCode, {
+    const norm = roomCode?.trim().toUpperCase();
+    const room = getRoom(norm);
+    if (!room) return;
+
+    if (room.phase === "SABOTAGE") {
+      const player = room.players.find(
+        (p) => p.socketId === socket.id || p.username?.toLowerCase() === author?.toLowerCase()
+      );
+      const isMafia = player ? player.role === "MAFIA" : authorRole === "MAFIA";
+
+      // Drop non-mafia edits during sabotage
+      if (!isMafia) {
+        return;
+      }
+
+      // Store secret sabotage code in room
+      room.currentCode = code;
+
+      recordEvent(norm, {
+        author: "System (Sabotage)",
+        authorRole: "MAFIA",
+        action: "SABOTAGE_DRAFT",
+        details: "Code altered during infiltration window",
+        code,
+        activeLines
+      });
+
+      // DO NOT broadcast to developers!
+      // Only broadcast to other mafia members if any
+      room.players.forEach((p) => {
+        if (p.role === "MAFIA" && p.socketId && p.socketId !== socket.id) {
+          io.to(p.socketId).emit("code:updated", { code, author, activeLines });
+        }
+      });
+      return;
+    }
+
+    // Normal DEBUG phase
+    room.currentCode = code;
+    recordEvent(norm, {
       author,
       authorRole,
       action: authorRole === "MAFIA" ? "SABOTAGE" : "CODE_EDIT",
@@ -312,12 +688,13 @@ io.on("connection", (socket) => {
       code,
       activeLines
     });
-    socket.to(roomCode).emit("code:updated", { code, author, activeLines });
+    socket.to(norm).emit("code:updated", { code, author, activeLines });
   });
 
-  // 6. TEST RUN EXECUTION
-  socket.on("test:run", ({ roomCode, author, authorRole, passed, details, code }) => {
+  socket.on("test:run", ({ roomCode, author, authorRole, passed, submit, details, code }) => {
     const norm = roomCode?.trim().toUpperCase();
+    const room = getRoom(norm);
+
     recordEvent(norm, {
       author,
       authorRole,
@@ -326,14 +703,47 @@ io.on("connection", (socket) => {
       code
     });
 
-    io.to(norm).emit("test:result", { passed, details, author });
+    io.to(norm).emit("test:result", { passed, submit, details, author });
+
+    if (submit && passed && room && room.status === "IN_PROGRESS") {
+      clearRoomTimer(norm);
+      completeGame(norm, "DEVELOPERS", "All Unit Tests Passed! Developers repaired the codebase before time ran out.");
+      const finalLeaderboard = finalizeMatchScores(norm, "DEVELOPERS");
+      console.log(`🏆 [Game Concluded: DEVELOPERS WIN] All tests passed in Room: ${norm}`);
+
+      io.to(norm).emit("game:finished", {
+        winnerTeam: "DEVELOPERS",
+        endReason: "All Unit Tests Passed! Developers successfully repaired the codebase.",
+        replay: getReplay(norm),
+        leaderboard: finalLeaderboard
+      });
+    }
   });
 
-  // 7. TACTICAL SABOTAGE ABILITIES & XP
-  socket.on("sabotage:trigger", ({ roomCode, ability, senderName, senderRole, targetLines }) => {
-    console.log(`💣 [Sabotage Triggered] Ability: ${ability} by ${senderName} (${senderRole}) in Room: ${roomCode}`);
+  const powerupCooldowns = new Map();
 
-    recordEvent(roomCode, {
+  socket.on("sabotage:trigger", ({ roomCode, ability, senderName, senderRole, targetLines }) => {
+    const norm = roomCode?.trim().toUpperCase();
+    const room = getRoom(norm);
+    const totalTime = room?.timeLimit || 600;
+    const cooldownSec = Math.max(15, Math.round(totalTime / 5));
+    const cdKey = `${norm}:${senderName}:${ability}`;
+    const now = Date.now();
+
+    if (powerupCooldowns.has(cdKey) && powerupCooldowns.get(cdKey) > now) {
+      const remainingSec = Math.ceil((powerupCooldowns.get(cdKey) - now) / 1000);
+      socket.emit("sabotage:effect", {
+        type: "COOLDOWN_ACTIVE",
+        durationSec: 3,
+        message: `⏳ ${ability} is on cooldown! (${remainingSec}s remaining)`
+      });
+      return;
+    }
+
+    powerupCooldowns.set(cdKey, now + cooldownSec * 1000);
+    console.log(`💣 [Sabotage Triggered] Ability: ${ability} by ${senderName} (${senderRole}) in Room: ${norm} (Cooldown: ${cooldownSec}s)`);
+
+    recordEvent(norm, {
       author: senderName,
       authorRole: senderRole,
       action: "SABOTAGE",
@@ -341,34 +751,20 @@ io.on("connection", (socket) => {
       activeLines: targetLines || []
     });
 
-    // Award Mafia +200 XP for executing a tactical sabotage
-    if (senderRole === "MAFIA") {
-      const scoreRes = awardPoints(roomCode, senderName, 200, "SABOTAGE");
-      if (scoreRes) {
-        io.to(roomCode).emit("score:updated", {
-          awardedTo: senderName,
-          points: 200,
-          reason: `Executed ${ability} Sabotage! (+200 XP)`,
-          leaderboard: scoreRes.allScores
-        });
-      }
-    }
-
-    // Broadcast effect
     if (ability === "SCREEN_GLITCH") {
-      socket.to(roomCode).emit("sabotage:effect", {
+      socket.to(norm).emit("sabotage:effect", {
         type: "SCREEN_GLITCH",
         durationSec: 6,
         message: "⚠️ CRITICAL SYSTEM GLITCH: Matrix interference detected!"
       });
     } else if (ability === "FALSE_GREEN") {
-      socket.to(roomCode).emit("sabotage:effect", {
+      socket.to(norm).emit("sabotage:effect", {
         type: "FALSE_GREEN",
         durationSec: 15,
         message: "🟢 ALL 3 UNIT TESTS PASSED (Simulated Verification)"
       });
     } else if (ability === "FUNCTION_LOCK") {
-      io.to(roomCode).emit("sabotage:effect", {
+      io.to(norm).emit("sabotage:effect", {
         type: "FUNCTION_LOCK",
         durationSec: 10,
         lockedLines: targetLines || [4, 5, 6, 7, 8],
@@ -383,10 +779,8 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Map to track emergency meetings used per room (Key: roomCode, Value: Set of usernames)
   const roomMeetings = new Map();
 
-  // 8. EMERGENCY MEETING & ELIMINATION VOTING
   socket.on("meeting:call", ({ roomCode, callerName }) => {
     const norm = roomCode?.trim().toUpperCase();
     if (!roomMeetings.has(norm)) {
@@ -421,49 +815,49 @@ io.on("connection", (socket) => {
 
   socket.on("meeting:vote", ({ roomCode, voterName, targetUsername }) => {
     const norm = roomCode?.trim().toUpperCase();
+    const voteRes = recordVote(norm, voterName, targetUsername);
+    if (!voteRes) return;
+
     io.to(norm).emit("meeting:vote_cast", {
       voterName,
-      targetUsername
+      targetUsername,
+      votes: voteRes.votes
     });
-  });
 
-  socket.on("meeting:finish", ({ roomCode, ejectedPlayer, wasMafia, votersWhoVotedCorrectly = [] }) => {
-    const norm = roomCode?.trim().toUpperCase();
-
-    // Award +300 XP to detectives who voted correctly
-    if (wasMafia && votersWhoVotedCorrectly.length > 0) {
-      votersWhoVotedCorrectly.forEach((voter) => {
-        awardPoints(norm, voter, 300, "VOTE_CORRECT");
-      });
+    if (voteRes.allVoted) {
+      console.log(`🗳️ [All Votes Cast] Finalizing voting tribunal for Room: ${norm}`);
+      clearRoomTimer(norm);
+      setTimeout(() => {
+        finalizeVoting(io, norm);
+      }, 1200);
     }
-
-    io.to(norm).emit("meeting:ejected", {
-      ejectedPlayer,
-      wasMafia,
-      leaderboard: getLeaderboard(norm)
-    });
   });
 
-  // 9. FINISH MATCH
-  socket.on("game:finish", ({ roomCode, winnerTeam, endReason }) => {
-    const replay = getReplay(roomCode);
-    const leaderboard = getLeaderboard(roomCode);
+  socket.on("meeting:finish", ({ roomCode }) => {
+    const norm = roomCode?.trim().toUpperCase();
+    finalizeVoting(io, norm);
+  });
 
-    io.to(roomCode).emit("game:finished", {
-      winnerTeam, // 'DEVELOPERS' | 'MAFIA'
+  socket.on("game:finish", ({ roomCode, winnerTeam, endReason }) => {
+    const norm = roomCode?.trim().toUpperCase();
+    clearRoomTimer(norm);
+    completeGame(norm, winnerTeam, endReason);
+    const replay = getReplay(norm);
+    const finalLeaderboard = finalizeMatchScores(norm, winnerTeam);
+
+    io.to(norm).emit("game:finished", {
+      winnerTeam,
       endReason,
       replay,
-      leaderboard
+      leaderboard: finalLeaderboard
     });
   });
 
-  // 10. LEAVE ROOM
   socket.on("room:leave", async (callback) => {
     await handlePlayerLeave(socket);
     callback?.({ success: true });
   });
 
-  // 11. DISCONNECT
   socket.on("disconnect", async () => {
     await handlePlayerLeave(socket);
   });

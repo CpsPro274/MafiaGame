@@ -1,10 +1,6 @@
-// Post-Match Timeline & Forensic Replay Manager
 
-const roomTimelines = new Map(); // Key: roomCode, Value: Array of timeline events
+const roomTimelines = new Map();
 
-/**
- * Initialize timeline when a match starts
- */
 export function initTimeline(roomCode, initialCode, players) {
   const normalizedCode = roomCode.trim().toUpperCase();
   const startTime = Date.now();
@@ -31,9 +27,6 @@ export function initTimeline(roomCode, initialCode, players) {
   console.log(`🎬 [Replay Initialized] Room: ${normalizedCode}`);
 }
 
-/**
- * Record a code change, test execution, or sabotage event
- */
 export function recordEvent(roomCode, { author, authorRole, action, details, code, activeLines = [] }) {
   const normalizedCode = roomCode.trim().toUpperCase();
   const timeline = roomTimelines.get(normalizedCode);
@@ -51,7 +44,7 @@ export function recordEvent(roomCode, { author, authorRole, action, details, cod
     timeLabel,
     author: author || "Anonymous",
     authorRole: authorRole || "DEVELOPER",
-    action, // 'CODE_EDIT' | 'TEST_RUN' | 'TEST_PASS' | 'TEST_FAIL' | 'SABOTAGE' | 'MEETING'
+    action,
     details: details || "Code modified",
     code: code || (timeline.events[timeline.events.length - 1]?.code || ""),
     activeLines
@@ -60,24 +53,17 @@ export function recordEvent(roomCode, { author, authorRole, action, details, cod
   timeline.events.push(event);
 }
 
-/**
- * Get the full recorded replay history for a room
- */
 export function getReplay(roomCode) {
   const normalizedCode = roomCode.trim().toUpperCase();
   const timeline = roomTimelines.get(normalizedCode);
 
   if (!timeline) {
-    // Generate realistic demo timeline if room not found
     return generateDemoReplay(normalizedCode);
   }
 
   return timeline;
 }
 
-/**
- * Fallback Demo Forensic Replay for instantaneous testing & presentation
- */
 export function generateDemoReplay(roomCode = "DEMO-MAFIA") {
   return {
     roomCode,

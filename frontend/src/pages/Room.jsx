@@ -8,8 +8,8 @@ export default function Room() {
   const { roomCode: paramRoomCode } = useParams();
   const navigate = useNavigate();
 
-  const roomCode = (paramRoomCode || localStorage.getItem("roomCode") || "").toUpperCase();
-  const currentUsername = localStorage.getItem("username") || "Developer";
+  const roomCode = (paramRoomCode || sessionStorage.getItem("roomCode") || localStorage.getItem("roomCode") || "").toUpperCase();
+  const currentUsername = sessionStorage.getItem("username") || localStorage.getItem("username") || "Developer";
 
   const [players, setPlayers] = useState([]);
   const [maxPlayers, setMaxPlayers] = useState(6);
@@ -35,7 +35,6 @@ export default function Room() {
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
 
-    // Fetch initial room state via REST endpoint
     fetch(`${getBackendUrl()}/api/rooms/${roomCode}`)
       .then((res) => res.json())
       .then((data) => {
@@ -47,17 +46,19 @@ export default function Room() {
       })
       .catch(() => {});
 
-    // Also re-join or get current room via socket if needed
     socket.emit("room:join", { roomCode, username: currentUsername }, (res) => {
       if (res?.success && res.room) {
         setPlayers(res.room.players || []);
         if (res.room.maxPlayers) setMaxPlayers(res.room.maxPlayers);
-        const me = res.room.players.find((p) => p.username === currentUsername);
+        if (res.player?.username) {
+          sessionStorage.setItem("username", res.player.username);
+        }
+        const myName = res.player?.username || currentUsername;
+        const me = res.room.players.find((p) => p.username.toLowerCase() === myName.toLowerCase());
         if (me?.isHost) setIsHost(true);
       }
     });
 
-    // Real-time socket events for player updates and game start
     const handlePlayerJoined = ({ player, room }) => {
       if (room?.players) {
         setPlayers(room.players);
@@ -77,13 +78,14 @@ export default function Room() {
       }
     };
 
-    const handleGameStarted = () => {
-      navigate(`/editor/${roomCode}`);
+    const handleGameStarted = (data) => {
+      navigate(`/editor/${roomCode}`, { state: data });
     };
 
     socket.on("room:player_joined", handlePlayerJoined);
     socket.on("room:player_left", handlePlayerLeft);
     socket.on("game:started", handleGameStarted);
+    socket.on("room:game_started", handleGameStarted);
 
     return () => {
       socket.off("connect", handleConnect);
@@ -91,10 +93,10 @@ export default function Room() {
       socket.off("room:player_joined", handlePlayerJoined);
       socket.off("room:player_left", handlePlayerLeft);
       socket.off("game:started", handleGameStarted);
+      socket.off("room:game_started", handleGameStarted);
     };
   }, [roomCode, currentUsername, navigate]);
 
-  // Handle Host starting the game
   const handleStartGame = () => {
     if (!socket || !connected) {
       setError("Not connected to game server.");
@@ -137,9 +139,11 @@ export default function Room() {
 
   const handleLeaveRoom = () => {
     socket.emit("room:leave", () => {
+      sessionStorage.removeItem("roomCode");
       localStorage.removeItem("roomCode");
       navigate("/lobby");
     });
+    sessionStorage.removeItem("roomCode");
     localStorage.removeItem("roomCode");
     navigate("/lobby");
   };
@@ -172,12 +176,13 @@ export default function Room() {
           <div
             style={{
               marginBottom: "20px",
-              padding: "12px 16px",
-              color: "#fff",
-              background: "#7f1d1d",
-              border: "1px solid #ef4444",
+              padding: "10px 16px",
+              color: "#dc2626",
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
               borderRadius: "8px",
               fontSize: "0.875rem",
+              fontWeight: "500"
             }}
           >
             {error}

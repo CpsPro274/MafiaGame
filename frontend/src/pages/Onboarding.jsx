@@ -16,16 +16,6 @@ import {
   QuestionnaireTitle,
 } from "@/components/ui/questionnaire"
 import styles from "./styles/Onboarding.module.css";
-// Where are you in your education journey ?
-// High school graduate
-// Which program are you exploring ?
-// Still exploring 
-// What field interests you most?
-// Design & Arts
-// When are you hoping to start?
-// Within a year
-// How did you hear about us?
-// Friend or family
 
 const items = [
   {
@@ -97,10 +87,8 @@ export default function Onboarding(){
 
   function handleSubmit(event) {
     event.preventDefault();
-    //console.log("Form submitted!"); 
     const answers = new FormData(event.currentTarget);
     const formDataObj = Object.fromEntries(answers.entries());
-    //console.log("Captured Answers:", formDataObj);
     navigate("/preview", {state: {preview: formDataObj}});
   }
 

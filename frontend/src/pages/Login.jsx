@@ -46,11 +46,12 @@ export default function AuthPage() {
       const resp = await api.post(endpoint, payload, { withCredentials: true });
 
       if (resp.data?.token) {
+        sessionStorage.setItem("token", resp.data.token);
         localStorage.setItem("token", resp.data.token);
       }
 
-      // Store username for room sessions & multiplayer
       const usernameToSave = resp.data?.user?.username || cleanUsername;
+      sessionStorage.setItem("username", usernameToSave);
       localStorage.setItem("username", usernameToSave);
 
       navigate("/home");
@@ -71,7 +72,7 @@ export default function AuthPage() {
           trailSize={0.1}
           maxAge={250}
           interpolate={5}
-          color="#2563eb"
+          color="#18181b"
           gooeyFilter={{ id: "custom-goo-filter", strength: 2 }}
           gooeyEnabled
           gooStrength={2}
