@@ -53,7 +53,7 @@ export default function AuthPage() {
       const usernameToSave = resp.data?.user?.username || cleanUsername;
       localStorage.setItem("username", usernameToSave);
 
-      navigate("/lobby");
+      navigate("/home");
     } catch (err) {
       console.error("Auth Error:", err);
       const backendMessage = err.response?.data?.error || err.response?.data?.message;
