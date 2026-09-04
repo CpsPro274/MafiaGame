@@ -19,9 +19,7 @@ router.post("/register", async (req, res) => {
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-
     let user = null;
-
     try {
       const existing = await query("SELECT id FROM users WHERE LOWER(username) = LOWER($1)", [cleanUsername]);
       if (existing.rows.length > 0) {

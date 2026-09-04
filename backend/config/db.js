@@ -27,7 +27,7 @@ export const query = (text, params) => pool.query(text, params);
 export async function testDbConnection() {
   try {
     const res = await pool.query("SELECT current_database(), NOW()");
-    console.log(`✅ PostgreSQL Connected to database: "${res.rows[0].current_database}"`);
+    console.log(`PostgreSQL Connected to database: "${res.rows[0].current_database}"`);
     return true;
   } catch (err) {
     if (err.message.includes("does not exist") || err.message.includes("database")) {
@@ -40,12 +40,11 @@ export async function testDbConnection() {
           port: dbPort,
         });
         const res2 = await fallbackPool.query("SELECT current_database(), NOW()");
-        console.log(`✅ PostgreSQL Connected to database: "${res2.rows[0].current_database}"`);
+        console.log(`PostgreSQL Connected to database: "${res2.rows[0].current_database}"`);
         return true;
       } catch (_) {}
     }
-    console.error(`❌ PostgreSQL Connection Failed: ${err.message}`);
-    console.error(`👉 Using credentials: user=${dbUser}, host=${dbHost}, port=${dbPort}, database=${dbName}`);
+    console.error(`PostgreSQL Connection Failed: ${err.message}`);
     return false;
   }
 }
