@@ -297,3 +297,72 @@
   background-color: #f4f4f5;
   border-color: #d4d4d8;
 }
+
+@media (max-width: 768px) {
+  .navbar {
+    padding: 0 1rem;
+  }
+
+  .container {
+    padding: 1.5rem 0 2rem;
+    width: 94%;
+  }
+
+  .hero {
+    margin-bottom: 1.25rem;
+  }
+
+  .hero h2 {
+    font-size: 1.65rem;
+  }
+
+  .heroSubtitle {
+    font-size: 0.85rem;
+  }
+
+  .roomCard {
+    padding: 1.25rem 1rem;
+  }
+
+  .headerRow {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding-bottom: 1rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .developerCount {
+    justify-content: space-between;
+  }
+
+  .codeBox {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .playerGrid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .actionsRow {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding-top: 1.25rem;
+  }
+
+  .startButton {
+    width: 100%;
+  }
+
+  .secondaryActions {
+    width: 100%;
+  }
+
+  .leaveButton {
+    width: 100%;
+    justify-content: center;
+  }
+}

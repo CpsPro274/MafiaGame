@@ -27,6 +27,7 @@ import {
   advanceToVotingPhase,
   recordVote,
   tallyVotesAndEvaluate,
+  advanceToNextRound,
   completeGame
 } from "./services/roomManager.js";
 import {
@@ -40,8 +41,8 @@ import {
   recordEvent,
   getReplay
 } from "./services/replayManager.js";
-import { getChallengeByDifficulty, CHALLENGES } from "./services/challengeService.js";
-import { initScores, awardPoints, finalizeMatchScores, getLeaderboard } from "./services/scoreManager.js";
+import { getChallengeByDifficulty, getRandomChallengeByDifficulty, CHALLENGES } from "./services/challengeService.js";
+import { initScores, awardPoints, awardRoundXp, finalizeMatchScores, getLeaderboard } from "./services/scoreManager.js";
 
 const app = express();
 
@@ -465,7 +466,7 @@ function finalizeVoting(io, roomCode) {
   const result = tallyVotesAndEvaluate(norm);
   if (!result) return;
 
-  console.log(`⚖️ [Voting Finalized] Room ${norm}: Ejected=${result.ejectedPlayer?.username || "None"}, Winner=${result.winnerTeam}`);
+  console.log(`⚖️ [Voting Finalized] Room ${norm}: Ejected=${result.ejectedPlayer?.username || "None"}, Winner=${result.winnerTeam || "NONE (continuing)"}`);
 
   io.to(norm).emit("meeting:result", {
     ejectedPlayer: result.ejectedPlayer ? result.ejectedPlayer.username : null,
@@ -474,10 +475,12 @@ function finalizeVoting(io, roomCode) {
     endReason: result.endReason,
     aliveMafia: result.aliveMafia,
     aliveDevs: result.aliveDevs,
-    votes: result.votes
+    votes: result.votes,
+    continueGame: result.continueGame
   });
 
   if (result.winnerTeam) {
+    // Game over — finalize scores and broadcast
     const finalLeaderboard = finalizeMatchScores(norm, result.winnerTeam);
     io.to(norm).emit("game:finished", {
       winnerTeam: result.winnerTeam,
@@ -485,7 +488,79 @@ function finalizeVoting(io, roomCode) {
       replay: getReplay(norm),
       leaderboard: finalLeaderboard
     });
+  } else {
+    // Game continues! Mafia survived but developers still outnumber them.
+    // Award round XP to all alive players (scores are retained across rounds).
+    const roundLeaderboard = awardRoundXp(norm, result.ejectedPlayer, result.wasMafia);
+
+    io.to(norm).emit("score:updated", {
+      leaderboard: roundLeaderboard,
+      reason: "ROUND_END"
+    });
+
+    // Short delay to let players see the ejection result, then start next round
+    setTimeout(() => {
+      startNextRound(io, norm);
+    }, 4000);
   }
+}
+
+function startNextRound(io, roomCode) {
+  const norm = roomCode?.trim().toUpperCase();
+  const room = advanceToNextRound(norm);
+  if (!room) return;
+
+  // Pick a new challenge that hasn't been used yet this match
+  const newChallenge = getRandomChallengeByDifficulty(
+    room.difficulty || "MEDIUM",
+    room.usedChallengeIds || []
+  );
+
+  room.usedChallengeIds = room.usedChallengeIds || [];
+  room.usedChallengeIds.push(newChallenge.id);
+  room.challenge = newChallenge;
+  room.initialCode = newChallenge.buggy_code;
+  room.currentCode = newChallenge.buggy_code;
+
+  console.log(`🆕 [New Round] Room: ${norm} → Round ${room.currentRound}, Challenge: "${newChallenge.title}"`);
+
+  recordEvent(norm, {
+    author: "System",
+    authorRole: "SYSTEM",
+    action: "NEXT_ROUND",
+    details: `Round ${room.currentRound} started! New challenge: ${newChallenge.title}`,
+    code: newChallenge.buggy_code
+  });
+
+  // Notify all players about the new round
+  room.players.forEach((p) => {
+    if (p.socketId) {
+      io.to(p.socketId).emit("game:next_round", {
+        roomCode: norm,
+        currentRound: room.currentRound,
+        phase: "SABOTAGE",
+        sabotageDuration: room.sabotageDuration,
+        phaseExpiresAt: room.phaseExpiresAt,
+        challenge: {
+          ...newChallenge,
+          buggy_code: p.role === "MAFIA" ? room.currentCode : room.initialCode
+        },
+        leaderboard: getLeaderboard(norm),
+        alivePlayers: room.players.filter((pl) => pl.isAlive).map((pl) => ({
+          username: pl.username,
+          isAlive: pl.isAlive,
+          role: pl.socketId === p.socketId ? pl.role : "???"
+        }))
+      });
+    }
+  });
+
+  // Start the sabotage timer for this new round
+  clearRoomTimer(norm);
+  const timer = setTimeout(() => {
+    startDebugPhase(io, norm);
+  }, room.sabotageDuration * 1000);
+  roomTimers.set(norm, { timer, phase: "SABOTAGE" });
 }
 
 io.on("connection", (socket) => {
@@ -575,11 +650,12 @@ io.on("connection", (socket) => {
       room.challenge = challengeData;
       room.initialCode = challengeData.buggy_code;
       room.currentCode = challengeData.buggy_code;
+      room.usedChallengeIds = [challengeData.id];
 
       initTimeline(room.roomCode, room.initialCode, room.players);
       initScores(room.roomCode, room.players);
 
-      console.log(`[Match Started] Room: ${room.roomCode} (${room.difficulty}) - Initial SABOTAGE phase (30s)`);
+      console.log(`[Match Started] Room: ${room.roomCode} (${room.difficulty}) Round ${room.currentRound} - Initial SABOTAGE phase (30s)`);
 
       clearRoomTimer(room.roomCode);
       const timer = setTimeout(() => {
@@ -593,6 +669,7 @@ io.on("connection", (socket) => {
             roomCode: room.roomCode,
             role: p.role,
             phase: "SABOTAGE",
+            currentRound: room.currentRound,
             sabotageDuration: room.sabotageDuration,
             phaseExpiresAt: room.phaseExpiresAt,
             room: {
@@ -618,6 +695,7 @@ io.on("connection", (socket) => {
           buggy_code: room.initialCode
         },
         phase: "SABOTAGE",
+        currentRound: room.currentRound,
         sabotageDuration: room.sabotageDuration,
         phaseExpiresAt: room.phaseExpiresAt,
         room

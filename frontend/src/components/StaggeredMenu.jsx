@@ -702,9 +702,15 @@ export const StaggeredMenu = ({
                 >
                   <a
                     className="sm-panel-item"
-                    href={item.link}
+                    href={item.link || '#'}
                     aria-label={item.ariaLabel}
                     data-index={index + 1}
+                    onClick={(e) => {
+                      if (item.onClick) {
+                        item.onClick(e);
+                      }
+                      closeMenu();
+                    }}
                   >
                     <span className="sm-panel-itemLabel">
                       {item.label}

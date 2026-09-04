@@ -7,6 +7,8 @@ import {
   Code2,
   PlayCircle,
   Send,
+  CheckCircle2,
+  BookOpen,
 } from "lucide-react";
 import styles from "./styles/editor.module.css";
 import { socket as sharedSocket, getBackendUrl } from "../socket";
@@ -35,6 +37,8 @@ export default function MonacoEditorPage() {
   const editorRef = useRef(null);
   const socketRef = useRef(null);
   const isRemoteUpdate = useRef(false);
+  const phaseRef = useRef(initialGameData?.phase || "SABOTAGE");
+  const playerRoleRef = useRef(initialGameData?.role || "DEVELOPER");
 
   const initialChallenge = initialGameData?.challenge || null;
   const initialLang = initialChallenge?.language?.toLowerCase() === "python" ? "python" : "javascript";
@@ -77,6 +81,8 @@ export default function MonacoEditorPage() {
   const [hasVoted, setHasVoted] = useState(false);
   const [ejectionResult, setEjectionResult] = useState(null);
   const [victoryData, setVictoryData] = useState(null);
+  const [currentRound, setCurrentRound] = useState(initialGameData?.currentRound || 1);
+  const [roundTransition, setRoundTransition] = useState(null);
 
   const [isGlitched, setIsGlitched] = useState(false);
   const [isFalseGreen, setIsFalseGreen] = useState(false);
@@ -89,6 +95,31 @@ export default function MonacoEditorPage() {
     CODE_RADAR: 0
   });
 
+  const [mobileTab, setMobileTab] = useState("code"); // "code" | "tests" | "challenge"
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" ? window.innerWidth <= 768 : false
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth <= 768;
+      setIsMobile(mobile);
+      if (editorRef.current) {
+        editorRef.current.layout();
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (mobileTab === "code" && editorRef.current) {
+      setTimeout(() => {
+        editorRef.current?.layout();
+      }, 80);
+    }
+  }, [mobileTab]);
+
   useEffect(() => {
     const interval = setInterval(() => {
       setPhaseSeconds((prev) => (prev > 0 ? prev - 1 : 0));
@@ -96,6 +127,15 @@ export default function MonacoEditorPage() {
 
     return () => clearInterval(interval);
   }, []);
+
+  // Keep refs in sync so socket handlers always read the latest values
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
+  useEffect(() => {
+    playerRoleRef.current = playerRole;
+  }, [playerRole]);
 
   const formatTime = (totalSecs) => {
     if (!totalSecs || totalSecs <= 0) return "00:00:00";
@@ -110,6 +150,13 @@ export default function MonacoEditorPage() {
         String(value).padStart(2, "0")
       )
       .join(":");
+  };
+
+  const formatCompactTime = (totalSecs) => {
+    if (!totalSecs || totalSecs <= 0) return "00:00";
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
   };
 
   useEffect(() => {
@@ -180,7 +227,8 @@ export default function MonacoEditorPage() {
       if (typeof remoteCode !== "string") return;
 
       // REQUIREMENT 1: When in SABOTAGE phase, developers must NOT see mafia edits!
-      if (phase === "SABOTAGE" && playerRole !== "MAFIA") {
+      // Use refs to avoid stale closure — phase/playerRole change after initial mount
+      if (phaseRef.current === "SABOTAGE" && playerRoleRef.current !== "MAFIA") {
         return;
       }
 
@@ -412,7 +460,18 @@ export default function MonacoEditorPage() {
           : "No consensus reached. Nobody was ejected."
       });
 
-      if (data.winnerTeam) {
+      if (data.continueGame) {
+        // Game continues — show transition message, next round is coming
+        setTimeout(() => {
+          setRoundTransition({
+            message: data.ejectedPlayer
+              ? `${data.ejectedPlayer} was ejected but the Imposter(s) are still at large! Next round incoming...`
+              : "No one was ejected. The Imposter(s) remain hidden! Preparing next round...",
+            wasMafia: data.wasMafia
+          });
+          setShowVotingModal(false);
+        }, 2500);
+      } else if (data.winnerTeam) {
         setTimeout(() => {
           setVictoryData({
             winnerTeam: data.winnerTeam,
@@ -425,10 +484,77 @@ export default function MonacoEditorPage() {
     const handleGameFinished = (data) => {
       console.log("Game finished:", data);
       setPhase("FINISHED");
+      setRoundTransition(null);
       setVictoryData({
         winnerTeam: data.winnerTeam,
         message: data.endReason || (data.winnerTeam === "DEVELOPERS" ? "Developers Win!" : "Mafia Wins!")
       });
+    };
+
+    const handleNextRound = (data) => {
+      console.log("Next round:", data);
+
+      // Clear previous round state
+      setRoundTransition(null);
+      setShowVotingModal(false);
+      setVotes({});
+      setHasVoted(false);
+      setEjectionResult(null);
+      setVictoryData(null);
+      setExecutionResult(null);
+      setAllTestsPassed(false);
+
+      // Update round counter
+      setCurrentRound(data.currentRound || 1);
+
+      // Update phase
+      setPhase(data.phase || "SABOTAGE");
+      setPhaseSeconds(data.sabotageDuration || 30);
+
+      // Load new challenge
+      if (data.challenge) {
+        const challengeData = data.challenge;
+        setChallenge(challengeData);
+
+        const challengeLanguage =
+          challengeData.language?.toLowerCase() === "python" ? "python" : "javascript";
+        const challengeCode = challengeData.buggy_code || STARTER_TEMPLATES[challengeLanguage] || "";
+
+        setLanguage(challengeLanguage);
+        setCode(challengeCode);
+
+        if (challengeData.test_cases && Array.isArray(challengeData.test_cases)) {
+          setTestCases(
+            challengeData.test_cases.map((tc, idx) => ({
+              id: idx + 1,
+              name: tc.name || `Test Case ${idx + 1}`,
+              input: tc.input,
+              expected: tc.expected,
+              actual: undefined,
+              status: "NOT RUN",
+              passed: false
+            }))
+          );
+        }
+
+        if (editorRef.current) {
+          isRemoteUpdate.current = true;
+          editorRef.current.setValue(challengeCode);
+          setTimeout(() => {
+            isRemoteUpdate.current = false;
+          }, 50);
+        }
+      }
+
+      // Update audit logs
+      setAuditLogs((prev) => [
+        ...prev,
+        {
+          author: "System",
+          action: `Round ${data.currentRound} started! New challenge loaded.`,
+          time: new Date().toLocaleTimeString()
+        }
+      ]);
     };
 
     socket.on("game:started", handleGameStartedEvent);
@@ -438,6 +564,7 @@ export default function MonacoEditorPage() {
     socket.on("meeting:vote_cast", handleVoteCast);
     socket.on("meeting:result", handleMeetingResult);
     socket.on("game:finished", handleGameFinished);
+    socket.on("game:next_round", handleNextRound);
 
     socket.on(
       "score:updated",
@@ -527,6 +654,7 @@ export default function MonacoEditorPage() {
       socket.off("meeting:vote_cast");
       socket.off("meeting:result");
       socket.off("game:finished");
+      socket.off("game:next_round");
       socket.off("score:updated");
       socket.off("game:error");
       socket.off("code:error");
@@ -1067,7 +1195,7 @@ export default function MonacoEditorPage() {
         <div className={styles.leftControls}>
           <div className={styles.brand}>
             <Code2 size={18} />
-            <span>CODE MAFIA</span>
+            <span className={styles.brandText}>CODE MAFIA</span>
           </div>
 
           <div className={styles.divider} />
@@ -1085,7 +1213,7 @@ export default function MonacoEditorPage() {
         <div className={styles.rightControls}>
           <div className={styles.timerBadge}>
             <Timer
-              size={16}
+              size={15}
               color={
                 phase === "SABOTAGE"
                   ? (playerRole === "MAFIA" ? "#ef4444" : "#eab308")
@@ -1102,11 +1230,20 @@ export default function MonacoEditorPage() {
                 fontWeight: phase === "SABOTAGE" || phase === "VOTING" ? "bold" : undefined
               }}
             >
-              {phase === "SABOTAGE"
-                ? `SABOTAGE: ${formatTime(phaseSeconds)}`
-                : (phase === "VOTING"
-                    ? `VOTING: ${formatTime(phaseSeconds)}`
-                    : formatTime(phaseSeconds))}
+              <span className={styles.timerFullText}>
+                {phase === "SABOTAGE"
+                  ? `R${currentRound} SABOTAGE: ${formatTime(phaseSeconds)}`
+                  : (phase === "VOTING"
+                      ? `R${currentRound} VOTING: ${formatTime(phaseSeconds)}`
+                      : `R${currentRound} ${formatTime(phaseSeconds)}`)}
+              </span>
+              <span className={styles.timerCompactText}>
+                {phase === "SABOTAGE"
+                  ? `R${currentRound} SAB: ${formatCompactTime(phaseSeconds)}`
+                  : (phase === "VOTING"
+                      ? `R${currentRound} VOTE: ${formatCompactTime(phaseSeconds)}`
+                      : `R${currentRound} ${formatCompactTime(phaseSeconds)}`)}
+              </span>
             </span>
           </div>
 
@@ -1115,7 +1252,7 @@ export default function MonacoEditorPage() {
           {phase === "SABOTAGE" && playerRole === "MAFIA" && (
             <button
               type="button"
-              className={styles.runBtn}
+              className={`${styles.runBtn} ${styles.desktopOnlyEarlyBtn}`}
               onClick={handleFinishSabotageEarly}
               style={{
                 backgroundColor: "#dc2626",
@@ -1124,7 +1261,7 @@ export default function MonacoEditorPage() {
                 fontWeight: "600"
               }}
             >
-              Finish Sabotage Early
+              Finish Early
             </button>
           )}
 
@@ -1135,7 +1272,7 @@ export default function MonacoEditorPage() {
             disabled={isRunning || isFunctionLocked || phase === "SABOTAGE" || phase === "VOTING"}
           >
             <PlayCircle size={15} />
-            {isRunning ? "Running..." : "Run"}
+            <span>{isRunning ? "Running..." : "Run"}</span>
           </button>
 
           <button
@@ -1158,42 +1295,55 @@ export default function MonacoEditorPage() {
             }
           >
             <Send size={14} />
-            {isRunning ? "Submitting..." : "Submit"}
+            <span>{isRunning ? "Submitting..." : "Submit"}</span>
           </button>
         </div>
       </header>
 
+      {/* Mobile Tab Navigation */}
+      <nav className={styles.mobileTabBar} aria-label="Editor tabs">
+        <button
+          type="button"
+          className={`${styles.mobileTabBtn} ${mobileTab === "code" ? styles.mobileTabActive : ""}`}
+          onClick={() => setMobileTab("code")}
+        >
+          <Code2 size={15} />
+          <span>Code</span>
+        </button>
+
+        <button
+          type="button"
+          className={`${styles.mobileTabBtn} ${mobileTab === "tests" ? styles.mobileTabActive : ""}`}
+          onClick={() => setMobileTab("tests")}
+        >
+          <CheckCircle2 size={15} />
+          <span>Tests</span>
+          <span className={`${styles.mobileTabBadge} ${allTestsPassed || isFalseGreen ? styles.badgeSuccess : ""}`}>
+            {isFalseGreen ? testCases.length : passedCount}/{testCases.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          className={`${styles.mobileTabBtn} ${mobileTab === "challenge" ? styles.mobileTabActive : ""}`}
+          onClick={() => setMobileTab("challenge")}
+        >
+          <BookOpen size={15} />
+          <span>Problem</span>
+        </button>
+      </nav>
+
       <main className={styles.mainLayout}>
-        <div className={styles.editorColumn}>
+        <div className={`${styles.editorColumn} ${mobileTab === "tests" ? styles.hideOnMobile : ""}`}>
           {phase === "SABOTAGE" && playerRole === "MAFIA" && (
-            <div
-              style={{
-                padding: "12px 18px",
-                backgroundColor: "#fef2f2",
-                border: "1px solid #fecaca",
-                borderRadius: "8px",
-                marginBottom: "12px",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center"
-              }}
-            >
-              <span style={{ color: "#991b1b", fontSize: "0.875rem", fontWeight: "500" }}>
+            <div className={styles.sabotageAlertMafia}>
+              <span className={styles.sabotageAlertText}>
                 😈 <strong>EXCLUSIVE SABOTAGE WINDOW:</strong> You have exclusive write access to tamper with the codebase before developers enter! ({phaseSeconds}s remaining)
               </span>
               <button
                 type="button"
+                className={styles.sabotageEarlyBtn}
                 onClick={handleFinishSabotageEarly}
-                style={{
-                  padding: "6px 14px",
-                  backgroundColor: "#dc2626",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: "6px",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                  fontSize: "0.8rem"
-                }}
               >
                 Finish Early
               </button>
@@ -1201,35 +1351,18 @@ export default function MonacoEditorPage() {
           )}
 
           {phase === "SABOTAGE" && playerRole !== "MAFIA" && (
-            <div
-              style={{
-                padding: "14px 18px",
-                backgroundColor: "#fefce8",
-                border: "1px solid #fde047",
-                borderRadius: "8px",
-                marginBottom: "12px"
-              }}
-            >
-              <span style={{ color: "#854d0e", fontSize: "0.875rem", fontWeight: "500" }}>
-                🔒 <strong>SYSTEM INFILTRATION IN PROGRESS:</strong> The Imposter is currently tampering with the codebase in secret. Your editor is locked and code changes are hidden. The modified codebase will be revealed when infiltration concludes in <strong>{phaseSeconds}s</strong>.
+            <div className={styles.sabotageAlertDev}>
+              <span className={styles.sabotageAlertText}>
+                <strong>SYSTEM INFILTRATION IN PROGRESS:</strong> The Imposter is currently tampering with the codebase in secret. Your editor is locked and code changes are hidden. The modified codebase will be revealed when infiltration concludes in <strong>{phaseSeconds}s</strong>.
               </span>
             </div>
           )}
 
           {phase === "DEBUG" && (
-            <div
-              style={{
-                padding: "10px 16px",
-                backgroundColor: "#f0fdf4",
-                border: "1px solid #bbf7d0",
-                borderRadius: "8px",
-                marginBottom: "12px",
-                color: "#166534",
-                fontSize: "0.85rem",
-                fontWeight: "500"
-              }}
-            >
-              🛠️ <strong>COLLABORATIVE DEBUG PHASE:</strong> Infiltration complete! The modified codebase is now live. Work together to diagnose bugs and pass all unit tests before time runs out!
+            <div className={styles.debugAlert}>
+              <span>
+                🛠️ <strong>COLLABORATIVE DEBUG PHASE:</strong> Infiltration complete! The modified codebase is now live. Work together to diagnose bugs and pass all unit tests before time runs out!
+              </span>
             </div>
           )}
 
@@ -1240,7 +1373,11 @@ export default function MonacoEditorPage() {
           )}
 
           {challenge && (
-            <section className={styles.challengePanel}>
+            <section
+              className={`${styles.challengePanel} ${
+                mobileTab === "code" ? styles.hideChallengeOnMobile : ""
+              } ${mobileTab === "challenge" ? styles.fullChallengeOnMobile : ""}`}
+            >
               <h1>{challenge.title || "Shopping Cart Discount Engine"}</h1>
               <p>{challenge.description || "Fix loop boundary bugs to accurately calculate item subtotals."}</p>
               <div className={styles.challengeMeta}>
@@ -1251,29 +1388,47 @@ export default function MonacoEditorPage() {
             </section>
           )}
 
-          <div className={styles.monacoContainer}>
+          <div
+            className={`${styles.monacoContainer} ${
+              mobileTab === "challenge" ? styles.hideOnMobile : ""
+            }`}
+          >
             <Editor
               height="100%"
               width="100%"
               language={language}
               value={code}
               theme="vs"
-              onMount={(ed) => (editorRef.current = ed)}
+              onMount={handleEditorMount}
               onChange={handleCodeChange}
               options={{
                 minimap: { enabled: false },
-                fontSize: 14,
+                fontSize: isMobile ? 13 : 14,
                 automaticLayout: true,
                 tabSize: 2,
                 wordWrap: "on",
                 lineNumbers: "on",
-                readOnly: isFunctionLocked || (phase === "SABOTAGE" && playerRole !== "MAFIA") || phase === "VOTING" || phase === "FINISHED"
+                lineNumbersMinChars: 3,
+                glyphMargin: false,
+                folding: false,
+                scrollBeyondLastLine: false,
+                smoothScrolling: true,
+                cursorSmoothCaretAnimation: "on",
+                readOnly:
+                  isFunctionLocked ||
+                  (phase === "SABOTAGE" && playerRole !== "MAFIA") ||
+                  phase === "VOTING" ||
+                  phase === "FINISHED"
               }}
             />
           </div>
         </div>
 
-        <aside className={styles.testSidePanel}>
+        <aside
+          className={`${styles.testSidePanel} ${
+            mobileTab !== "tests" ? styles.hideOnMobile : ""
+          }`}
+        >
           <div className={styles.testSideHeader}>
             <h3 className={styles.testSideTitle}>Test Cases</h3>
             <span className={styles.testSummaryBadge}>
@@ -1489,7 +1644,7 @@ export default function MonacoEditorPage() {
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "10px" }}>
+            <div className={styles.modalActions}>
               <button
                 type="button"
                 className={styles.runBtn}
@@ -1509,9 +1664,33 @@ export default function MonacoEditorPage() {
         </div>
       )}
 
+      {roundTransition && (
+        <div className={styles.modalOverlay}>
+          <div className={`${styles.modalContent} ${styles.transitionModalContent}`}>
+            <div className={styles.modalHeader}>
+              <h2 className={styles.transitionTitle}>
+                🔄 ROUND {currentRound} COMPLETE
+              </h2>
+              <p style={{ marginTop: "8px", color: "hsl(var(--muted-foreground))" }}>
+                {roundTransition.message}
+              </p>
+            </div>
+
+            <div className={styles.transitionBox}>
+              <p style={{ fontSize: "0.95rem", fontWeight: "500", color: "#92400e" }}>
+                ⏳ A new challenge is being prepared for Round {currentRound + 1}...
+              </p>
+              <p style={{ fontSize: "0.85rem", color: "#a16207", marginTop: "8px" }}>
+                Your XP has been retained. Survive and hunt the Imposter(s)!
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {victoryData && (
         <div className={styles.modalOverlay}>
-          <div className={styles.modalContent} style={{ textAlign: "center", maxWidth: "520px" }}>
+          <div className={`${styles.modalContent} ${styles.victoryModalContent}`}>
             <div className={styles.modalHeader}>
               <h2
                 style={{
@@ -1524,23 +1703,25 @@ export default function MonacoEditorPage() {
               <p>{victoryData.message}</p>
             </div>
 
-            <div style={{ padding: "16px", backgroundColor: "#f8fafc", border: "1px solid #e4e4e7", borderRadius: "8px" }}>
-              <div className={styles.sectionTitle}>Operative Roster & Roles</div>
+            <div className={styles.victoryRosterBox}>
+              <div className={styles.sectionTitle}>Operative Roster & Roles (Completed in {currentRound} Round{currentRound !== 1 ? "s" : ""})</div>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px", textAlign: "left" }}>
                 {players.map((p, idx) => {
                   const isWinner =
                     (victoryData.winnerTeam === "DEVELOPERS" && p.role === "DEVELOPER") ||
                     (victoryData.winnerTeam === "MAFIA" && p.role === "MAFIA");
-                  const earnedXp = isWinner ? (p.role === "MAFIA" ? 500 : 300) : 0;
+                  const victoryBonus = isWinner ? (p.role === "MAFIA" ? 500 : 300) : 0;
+                  const roundXp = p.role === "DEVELOPER" ? currentRound * 50 : currentRound * 75;
+                  const totalXp = (p.isAlive !== false ? roundXp : 0) + victoryBonus;
                   return (
-                    <div key={idx} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.875rem" }}>
+                    <div key={idx} className={styles.rosterRow}>
                       <span>
-                        {p.username} - <strong style={{ color: p.role === "MAFIA" ? "#ef4444" : "#22c55e" }}>{p.role || "DEVELOPER"}</strong>
+                        {p.username} {p.isAlive === false ? "💀" : ""} - <strong style={{ color: p.role === "MAFIA" ? "#ef4444" : "#22c55e" }}>{p.role || "DEVELOPER"}</strong>
                       </span>
                       {isWinner ? (
-                        <span style={{ color: "#22c55e", fontWeight: "600" }}>+{earnedXp} XP (Victory)</span>
+                        <span style={{ color: "#22c55e", fontWeight: "600" }}>~{totalXp} XP (Victory + Rounds)</span>
                       ) : (
-                        <span style={{ color: "#ef4444", fontWeight: "600" }}>0 XP (Defeat)</span>
+                        <span style={{ color: "#ef4444", fontWeight: "600" }}>{totalXp > 0 ? `~${totalXp} XP (Rounds)` : "0 XP (Defeat)"}</span>
                       )}
                     </div>
                   );
@@ -1563,11 +1744,21 @@ export default function MonacoEditorPage() {
       <footer className={styles.statusBar}>
         <div className={styles.statusIndicator}>
           <span className={connected ? styles.dotConnected : styles.dotDisconnected} />
-          <span>{connected ? "Collaborative Online" : "Local Mode"}</span>
+          <span className={styles.statusOnlineText}>{connected ? "Collaborative Online" : "Local Mode"}</span>
         </div>
 
-        <div>Room: {roomCode || "default"}</div>
-        <div>Players: {players.length}</div>
+        <div className={styles.statusItem}>
+          <span className={styles.statusLabel}>Room: </span>
+          <span>{roomCode || "default"}</span>
+        </div>
+        <div className={styles.statusItem}>
+          <span className={styles.statusLabel}>Round: </span>
+          <span>{currentRound}</span>
+        </div>
+        <div className={styles.statusItem}>
+          <span className={styles.statusLabel}>Players: </span>
+          <span>{players.length}</span>
+        </div>
       </footer>
     </div>
   );

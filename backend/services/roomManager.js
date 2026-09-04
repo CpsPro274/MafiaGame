@@ -56,6 +56,8 @@ export function createRoom(socketId, username, difficulty = "MEDIUM", maxPlayers
     votes: {},
     winnerTeam: null,
     endReason: null,
+    currentRound: 0,
+    usedChallengeIds: [],
     createdAt: Date.now()
   };
 
@@ -232,6 +234,8 @@ export function startGame(roomCode, hostSocketId) {
   room.votes = {};
   room.winnerTeam = null;
   room.endReason = null;
+  room.currentRound = 1;
+  room.usedChallengeIds = [];
 
   return { room };
 }
@@ -318,15 +322,15 @@ export function tallyVotesAndEvaluate(roomCode) {
   let endReason = null;
 
   if (aliveMafia === 0) {
+    // All mafia eliminated — developers win
     winnerTeam = "DEVELOPERS";
     endReason = "All Imposters have been voted out! Developers win!";
   } else if (aliveMafia >= aliveDevs) {
+    // Mafia equals or outnumbers developers — mafia wins
     winnerTeam = "MAFIA";
     endReason = `The Imposters have equaled or outnumbered the Developers (${aliveMafia} vs ${aliveDevs})! Mafia wins!`;
-  } else {
-    winnerTeam = "MAFIA";
-    endReason = "Debugging round expired and the Imposter survived the voting tribunal! Mafia wins!";
   }
+  // Otherwise: mafia survived but developers still outnumber them → continue to next round
 
   if (winnerTeam) {
     room.status = "FINISHED";
@@ -343,8 +347,26 @@ export function tallyVotesAndEvaluate(roomCode) {
     endReason,
     aliveMafia,
     aliveDevs,
-    votes: room.votes
+    votes: room.votes,
+    continueGame: !winnerTeam
   };
+}
+
+export function advanceToNextRound(roomCode) {
+  const room = rooms.get(roomCode.trim().toUpperCase());
+  if (!room) return null;
+
+  room.currentRound = (room.currentRound || 0) + 1;
+  room.phase = "SABOTAGE";
+  room.status = "IN_PROGRESS";
+  room.sabotageDuration = 30;
+  room.phaseExpiresAt = Date.now() + room.sabotageDuration * 1000;
+  room.votes = {};
+  room.winnerTeam = null;
+  room.endReason = null;
+
+  console.log(`🔄 [Next Round] Room: ${room.roomCode} → Round ${room.currentRound}`);
+  return room;
 }
 
 export function completeGame(roomCode, winnerTeam, endReason) {

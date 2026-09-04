@@ -82,18 +82,12 @@ export default function AuthPage() {
             <AnimatedLogo />
           </div>
           <h1>Code Mafia</h1>
-          <p style={{ color: "var(--muted-foreground)", fontSize: "0.9rem", marginTop: "4px" }}>
-            The Ultimate Social Deduction Coding Game
-          </p>
         </div>
       </div>
 
       <div className={styles.rightSection}>
         <div className={styles.box}>
           <h1 className={styles.title}>{isLogin ? "Sign In" : "Create Account"}</h1>
-          <p className={styles.subtitle}>
-            {isLogin ? "Welcome back! Enter your details to continue." : "Register to start playing Code Mafia with your team."}
-          </p>
 
           <form className={styles.form} onSubmit={handleSubmit}>
             <input

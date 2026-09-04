@@ -454,8 +454,10 @@ export default function Lobby(){
                     }
                     onChange={
                       handleCreateChange
-                    }
-                  >
+                    }>
+                    <option value="1">
+                      1 Minute (Debugg)
+                    </option>
                     <option value="5">
                       5 Minutes (Fast Match)
                     </option>
@@ -478,12 +480,12 @@ export default function Lobby(){
                 </div>
               </div>
 
-              <FlowButton
+              <button
                 type="submit"
-                className="mt-6 w-full justify-center"
-                disabled={loading || !connected}
-                text={loading ? "CREATING..." : "CREATE LOBBY"}
-              />
+                className={styles.secondaryButton}
+                disabled={loading || !connected}>
+                  {loading ? "CREATING..." : "CREATE LOBBY"}
+              </button>
             </form>
           )}
 
@@ -567,8 +569,7 @@ export default function Lobby(){
                       <span
                         className={
                           styles.inputIcon
-                        }
-                      >
+                        }>
                         ◉
                       </span>
 
@@ -588,32 +589,28 @@ export default function Lobby(){
                     </div>
                   </div>
 
-                  <FlowButton
+                  <button
                     type="submit"
-                    className="mt-6 w-full justify-center"
-                    disabled={loading || !connected}
-                    text={loading ? "JOINING..." : "ENTER LOBBY"}
-                  />
+                    className={styles.secondaryButton}
+                    disabled={loading || !connected}>
+                      {loading ? "JOINING..." : "Enter Lobby"}
+                  </button>
                 </div>
 
                 <div
                   className={
                     styles.joinDivider
-                  }
-                >
+                  }>
                   <span>OR</span>
                 </div>
 
                 <button
                   type="button"
-                  className={
-                    styles.secondaryButton
-                  }
+                  className={styles.secondaryButton}
                   onClick={() =>
                     setActiveTab("create")
-                  }
-                >
-                  Create a New Lobby
+                  }>
+                    Create a New Lobby
                 </button>
               </div>
             </form>

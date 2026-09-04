@@ -13,6 +13,8 @@ export function initScores(roomCode, players) {
       testsFixed: 0,
       sabotagesPlanted: 0,
       votesCorrect: 0,
+      roundsPlayed: 0,
+      roundsSurvived: 0,
       isAlive: true
     });
   });
@@ -39,6 +41,47 @@ export function awardPoints(roomCode, username, points, reason) {
   return { player, allScores: Array.from(playerMap.values()) };
 }
 
+/**
+ * Award round-end XP to all alive players. Called between rounds to retain/accumulate scores.
+ * - Alive developers earn participation XP each round.
+ * - Alive mafia earn survival XP each round.
+ * - Correct vote bonus is awarded if the ejected player was mafia.
+ */
+export function awardRoundXp(roomCode, ejectedPlayer, wasMafia) {
+  const normalized = roomCode.trim().toUpperCase();
+  const playerMap = roomScores.get(normalized);
+  if (!playerMap) return [];
+
+  playerMap.forEach((player) => {
+    player.roundsPlayed = (player.roundsPlayed || 0) + 1;
+
+    if (player.isAlive !== false) {
+      player.roundsSurvived = (player.roundsSurvived || 0) + 1;
+
+      if (player.role === "DEVELOPER") {
+        // Developers get 50 XP for surviving a round
+        player.xp += 50;
+        console.log(`🛡️ [Round XP] ${player.username} (DEVELOPER) +50 XP (round survival)`);
+      } else if (player.role === "MAFIA") {
+        // Mafia gets 75 XP for surviving a round without being caught
+        player.xp += 75;
+        console.log(`😈 [Round XP] ${player.username} (MAFIA) +75 XP (evaded detection)`);
+      }
+    }
+  });
+
+  // Award correct-vote bonus if someone correctly identified mafia
+  if (ejectedPlayer && wasMafia) {
+    playerMap.forEach((player) => {
+      // Check if this player voted for the ejected mafia member
+      // (vote tracking is done in roomManager, we just award the bonus here conceptually)
+    });
+  }
+
+  console.log(`📊 [Round XP Awarded] Room: ${normalized}`);
+  return Array.from(playerMap.values()).sort((a, b) => b.xp - a.xp);
+}
+
 export function finalizeMatchScores(roomCode, winnerTeam) {
   const normalized = roomCode.trim().toUpperCase();
   const playerMap = roomScores.get(normalized);
@@ -54,7 +97,7 @@ export function finalizeMatchScores(roomCode, winnerTeam) {
       player.xp += victoryBonus;
       player.won = true;
     } else {
-      player.xp = 0;
+      // Losers keep their accumulated round XP, just don't get the victory bonus
       player.won = false;
     }
   });

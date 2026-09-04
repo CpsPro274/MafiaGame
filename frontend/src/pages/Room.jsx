@@ -204,9 +204,9 @@ export default function Room() {
               <span className={styles.codeValue}>{roomCode}</span>
               <button
                 type="button"
-                className={styles.copyBtn}
+                className={`${styles.btn} ${styles.btnPrimary} ${styles.btnLarge}`}
                 onClick={handleCopyCode}
-                title="Copy Room Code"
+                text="Copy Room Code"
               >
                 {copied ? <Check size={14} color="#22c55e" /> : <Copy size={14} />}
               </button>

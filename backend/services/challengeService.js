@@ -241,3 +241,37 @@ export function getChallengeByDifficulty(difficulty = "MEDIUM") {
   const diff = (difficulty || "MEDIUM").toUpperCase();
   return CHALLENGES[diff] || CHALLENGES.MEDIUM;
 }
+
+/**
+ * Returns all available challenges as a flat array.
+ */
+export function getAllChallenges() {
+  return Object.values(CHALLENGES);
+}
+
+/**
+ * Pick a challenge for the given difficulty, excluding previously-used IDs.
+ * If all challenges at that difficulty have been used, picks from ANY difficulty
+ * (excluding used). If truly everything is exhausted, falls back to the default.
+ */
+export function getRandomChallengeByDifficulty(difficulty = "MEDIUM", usedChallengeIds = []) {
+  const diff = (difficulty || "MEDIUM").toUpperCase();
+  const all = Object.values(CHALLENGES);
+
+  // Prefer same difficulty, not yet used
+  const sameDiffUnused = all.filter(
+    (c) => c.difficulty === diff && !usedChallengeIds.includes(c.id)
+  );
+  if (sameDiffUnused.length > 0) {
+    return sameDiffUnused[Math.floor(Math.random() * sameDiffUnused.length)];
+  }
+
+  // Fallback: any difficulty, not yet used
+  const anyUnused = all.filter((c) => !usedChallengeIds.includes(c.id));
+  if (anyUnused.length > 0) {
+    return anyUnused[Math.floor(Math.random() * anyUnused.length)];
+  }
+
+  // All exhausted — cycle back (reset) and pick any at the requested difficulty
+  return CHALLENGES[diff] || CHALLENGES.MEDIUM;
+}
