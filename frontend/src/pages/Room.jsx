@@ -176,12 +176,13 @@ export default function Room() {
           <div
             style={{
               marginBottom: "20px",
-              padding: "12px 16px",
-              color: "#fff",
-              background: "#7f1d1d",
-              border: "1px solid #ef4444",
+              padding: "10px 16px",
+              color: "#dc2626",
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
               borderRadius: "8px",
               fontSize: "0.875rem",
+              fontWeight: "500"
             }}
           >
             {error}

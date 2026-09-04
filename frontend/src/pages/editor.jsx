@@ -211,9 +211,14 @@ export default function MonacoEditorPage() {
 
     socket.on("connect", handleConnect);
 
-    socket.on("code:updated", ({ code: remoteCode, author }) => {
-      console.log(`[Collab Sync] Code updated by ${author}`);
+    socket.on("code:updated", ({ code: remoteCode, author, activeLines }) => {
+      console.log(`[Collab Sync] Code updated by ${author}`, activeLines);
       if (typeof remoteCode !== "string") return;
+
+      // REQUIREMENT 1: When in SABOTAGE phase, developers must NOT see mafia edits!
+      if (phase === "SABOTAGE" && playerRole !== "MAFIA") {
+        return;
+      }
 
       isRemoteUpdate.current = true;
       setCode(remoteCode);
@@ -233,12 +238,13 @@ export default function MonacoEditorPage() {
         setTestCases(
           results.map((r, idx) => ({
             id: idx + 1,
-            name: `Test Case ${idx + 1}`,
-            input: testCases[idx]?.input || { test: idx + 1 },
+            name: r.name || `Test Case ${idx + 1}`,
+            input: r.input !== undefined ? r.input : testCases[idx]?.input,
             expected: r.expected,
             actual: r.actual,
             status: r.passed ? "PASSED" : "FAILED",
-            passed: r.passed
+            passed: r.passed,
+            error: r.error
           }))
         );
       } else {
@@ -249,6 +255,15 @@ export default function MonacoEditorPage() {
             passed
           }))
         );
+      }
+
+      if (author === username) {
+        setExecutionResult({
+          status: passed ? "success" : "failed",
+          passed: Boolean(passed),
+          stdout: details || "",
+          stderr: ""
+        });
       }
 
       setAuditLogs((prev) => [
@@ -347,6 +362,20 @@ export default function MonacoEditorPage() {
         setLanguage(challengeLanguage);
         setCode(challengeCode);
 
+        if (challengeData.test_cases && Array.isArray(challengeData.test_cases)) {
+          setTestCases(
+            challengeData.test_cases.map((tc, idx) => ({
+              id: idx + 1,
+              name: tc.name || `Test Case ${idx + 1}`,
+              input: tc.input,
+              expected: tc.expected,
+              actual: undefined,
+              status: "NOT RUN",
+              passed: false
+            }))
+          );
+        }
+
         if (editorRef.current) {
           isRemoteUpdate.current = true;
           editorRef.current.setValue(challengeCode);
@@ -366,6 +395,18 @@ export default function MonacoEditorPage() {
         if (data.phase === "DEBUG") {
           setPhaseSeconds(data.timeLimit || 600);
           setShowVotingModal(false);
+
+          // Reveal the code that the mafia edited during sabotage
+          if (data.code && typeof data.code === "string") {
+            isRemoteUpdate.current = true;
+            setCode(data.code);
+            if (editorRef.current) {
+              editorRef.current.setValue(data.code);
+            }
+            setTimeout(() => {
+              isRemoteUpdate.current = false;
+            }, 50);
+          }
         } else if (data.phase === "VOTING") {
           setPhaseSeconds(data.votingDuration || 45);
           setShowVotingModal(true);
@@ -433,79 +474,6 @@ export default function MonacoEditorPage() {
     socket.on("meeting:vote_cast", handleVoteCast);
     socket.on("meeting:result", handleMeetingResult);
     socket.on("game:finished", handleGameFinished);
-
-    socket.on(
-      "code:updated",
-      ({
-        code: remoteCode,
-        author,
-        activeLines,
-      }) => {
-        console.log(
-          `Code updated by ${author}`,
-          activeLines
-        );
-
-        if (
-          typeof remoteCode !==
-          "string"
-        ) {
-          return;
-        }
-
-        isRemoteUpdate.current =
-          true;
-
-        setCode(remoteCode);
-
-        if (
-          editorRef.current &&
-          editorRef.current.getValue() !==
-            remoteCode
-        ) {
-          editorRef.current.setValue(
-            remoteCode
-          );
-        }
-
-        setTimeout(() => {
-          isRemoteUpdate.current =
-            false;
-        }, 0);
-      }
-    );
-
-    socket.on(
-      "test:result",
-      ({
-        passed,
-        details,
-        author,
-      }) => {
-        console.log(
-          `Test result from ${author}:`,
-          passed,
-          details
-        );
-
-        if (author !== username) {
-          return;
-        }
-
-        setExecutionResult({
-          status: passed
-            ? "success"
-            : "failed",
-
-          passed: Boolean(passed),
-
-          stdout:
-            details || "",
-
-          stderr: "",
-        });
-      }
-    );
 
     socket.on(
       "score:updated",
@@ -634,6 +602,20 @@ export default function MonacoEditorPage() {
         }
 
         setChallenge(data);
+
+        if (data.test_cases && Array.isArray(data.test_cases)) {
+          setTestCases(
+            data.test_cases.map((tc, idx) => ({
+              id: idx + 1,
+              name: tc.name || `Test Case ${idx + 1}`,
+              input: tc.input,
+              expected: tc.expected,
+              actual: undefined,
+              status: "NOT RUN",
+              passed: false
+            }))
+          );
+        }
 
         const challengeLanguage =
           data.language?.toLowerCase() ===
@@ -797,12 +779,13 @@ export default function MonacoEditorPage() {
         setTestCases(
           data.results.map((r, idx) => ({
             id: idx + 1,
-            name: `Test Case ${idx + 1}`,
-            input: testCases[idx]?.input || { test: idx + 1 },
+            name: r.name || `Test Case ${idx + 1}`,
+            input: r.input !== undefined ? r.input : testCases[idx]?.input,
             expected: r.expected,
             actual: r.actual,
             status: r.passed ? "PASSED" : "FAILED",
-            passed: r.passed
+            passed: r.passed,
+            error: r.error
           }))
         );
       } else {
@@ -1222,8 +1205,8 @@ export default function MonacoEditorPage() {
             <div
               style={{
                 padding: "12px 18px",
-                backgroundColor: "rgba(239, 68, 68, 0.15)",
-                border: "1px solid rgba(239, 68, 68, 0.4)",
+                backgroundColor: "#fef2f2",
+                border: "1px solid #fecaca",
                 borderRadius: "8px",
                 marginBottom: "12px",
                 display: "flex",
@@ -1231,7 +1214,7 @@ export default function MonacoEditorPage() {
                 alignItems: "center"
               }}
             >
-              <span style={{ color: "#fca5a5", fontSize: "0.9rem" }}>
+              <span style={{ color: "#991b1b", fontSize: "0.875rem", fontWeight: "500" }}>
                 😈 <strong>EXCLUSIVE SABOTAGE WINDOW:</strong> You have exclusive write access to tamper with the codebase before developers enter! ({phaseSeconds}s remaining)
               </span>
               <button
@@ -1239,7 +1222,7 @@ export default function MonacoEditorPage() {
                 onClick={handleFinishSabotageEarly}
                 style={{
                   padding: "6px 14px",
-                  backgroundColor: "#ef4444",
+                  backgroundColor: "#dc2626",
                   color: "#fff",
                   border: "none",
                   borderRadius: "6px",
@@ -1257,14 +1240,14 @@ export default function MonacoEditorPage() {
             <div
               style={{
                 padding: "14px 18px",
-                backgroundColor: "rgba(234, 179, 8, 0.15)",
-                border: "1px solid rgba(234, 179, 8, 0.4)",
+                backgroundColor: "#fefce8",
+                border: "1px solid #fde047",
                 borderRadius: "8px",
                 marginBottom: "12px"
               }}
             >
-              <span style={{ color: "#fde047", fontSize: "0.95rem" }}>
-                ⚠️ <strong>SYSTEM INFILTRATION DETECTED:</strong> The Imposter is currently sabotaging the codebase! Editor is locked. Collaborative debugging opens in <strong>{phaseSeconds}s</strong>.
+              <span style={{ color: "#854d0e", fontSize: "0.875rem", fontWeight: "500" }}>
+                🔒 <strong>SYSTEM INFILTRATION IN PROGRESS:</strong> The Imposter is currently tampering with the codebase in secret. Your editor is locked and code changes are hidden. The modified codebase will be revealed when infiltration concludes in <strong>{phaseSeconds}s</strong>.
               </span>
             </div>
           )}
@@ -1273,15 +1256,16 @@ export default function MonacoEditorPage() {
             <div
               style={{
                 padding: "10px 16px",
-                backgroundColor: "rgba(34, 197, 94, 0.1)",
-                border: "1px solid rgba(34, 197, 94, 0.25)",
+                backgroundColor: "#f0fdf4",
+                border: "1px solid #bbf7d0",
                 borderRadius: "8px",
                 marginBottom: "12px",
-                color: "#86efac",
-                fontSize: "0.85rem"
+                color: "#166534",
+                fontSize: "0.85rem",
+                fontWeight: "500"
               }}
             >
-              🛠️ <strong>COLLABORATIVE DEBUG PHASE:</strong> Work together to fix all bugs and pass unit tests before time runs out!
+              🛠️ <strong>COLLABORATIVE DEBUG PHASE:</strong> Infiltration complete! The modified codebase is now live. Work together to diagnose bugs and pass all unit tests before time runs out!
             </div>
           )}
 
@@ -1309,7 +1293,7 @@ export default function MonacoEditorPage() {
               width="100%"
               language={language}
               value={code}
-              theme="vs-dark"
+              theme="vs"
               onMount={(ed) => (editorRef.current = ed)}
               onChange={handleCodeChange}
               options={{
@@ -1372,6 +1356,15 @@ export default function MonacoEditorPage() {
                         }`}
                       >
                         {JSON.stringify(isFalseGreen ? test.expected : test.actual, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+
+                  {test.error && (
+                    <div className={styles.testDetailRow}>
+                      <span className={styles.testLabel}>Exception / Trace:</span>
+                      <pre className={`${styles.testCode} ${styles.codeError}`}>
+                        {test.error}
                       </pre>
                     </div>
                   )}
@@ -1567,7 +1560,7 @@ export default function MonacoEditorPage() {
               <p>{victoryData.message}</p>
             </div>
 
-            <div style={{ padding: "16px", backgroundColor: "hsl(var(--background))", borderRadius: "8px" }}>
+            <div style={{ padding: "16px", backgroundColor: "#f8fafc", border: "1px solid #e4e4e7", borderRadius: "8px" }}>
               <div className={styles.sectionTitle}>Operative Roster & Roles</div>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px", textAlign: "left" }}>
                 {players.map((p, idx) => {

@@ -1,144 +1,256 @@
 .page {
   min-height: 100vh;
   background-color: #ffffff;
-  color: #0f172a;
+  color: #09090b;
+  position: relative;
+}
+
+.gridBackground {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 380px;
+  background: radial-gradient(circle at 50% 0%, rgba(9, 9, 11, 0.02) 0%, rgba(255, 255, 255, 0) 70%);
+  pointer-events: none;
 }
 
 .navbar {
-  height: 60px;
+  height: 56px;
   display: flex;
   align-items: center;
-  padding: 0 5%;
-  border-bottom: 1px solid #e2e8f0;
+  justify-content: space-between;
+  padding: 0 2rem;
+  border-bottom: 1px solid #e4e4e7;
   background-color: #ffffff;
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
 .brand h1 {
   margin: 0;
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: #0f172a;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #09090b;
 }
 
 .container {
-  width: min(840px, 90%);
+  width: min(780px, 92%);
   margin: 0 auto;
-  padding: 48px 0;
+  padding: 3rem 0 4rem;
+  position: relative;
+  z-index: 10;
 }
 
 .hero {
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: 2rem;
 }
 
 .hero h2 {
-  margin: 0 0 6px;
+  margin: 0 0 0.5rem;
   font-size: 2.25rem;
-  font-weight: 700;
-  color: #0f172a;
+  font-weight: 800;
+  color: #09090b;
+  letter-spacing: -0.03em;
 }
 
 .lobbyCard {
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background-color: #f8fafc;
+  border: 1px solid #e4e4e7;
+  border-radius: 12px;
+  background-color: #ffffff;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 8px 16px -4px rgba(0, 0, 0, 0.03);
   overflow: hidden;
 }
 
 .tabs {
   display: flex;
-  border-bottom: 1px solid #e2e8f0;
-  background-color: #ffffff;
+  padding: 6px;
+  background-color: #f4f4f5;
+  border-bottom: 1px solid #e4e4e7;
+  gap: 6px;
 }
 
 .tab {
   flex: 1;
-  padding: 14px;
+  padding: 10px 16px;
   background-color: transparent;
   border: none;
-  color: #64748b;
-  font-size: 0.9rem;
+  border-radius: 6px;
+  color: #71717a;
+  font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab:hover {
+  color: #09090b;
 }
 
 .activeTab {
-  color: #0f172a;
-  border-bottom: 2px solid #2563eb;
-  background-color: #f8fafc;
+  color: #09090b;
+  background-color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
-.formContent {
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.form {
+  padding: 2rem;
 }
 
-.field {
+.formHeader {
+  margin-bottom: 1.5rem;
+}
+
+.formHeader h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #09090b;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.25rem;
+}
+
+.inputGroup {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.field label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #64748b;
+.inputGroup label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.inputWrapper {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.inputIcon {
+  position: absolute;
+  left: 12px;
+  color: #a1a1aa;
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+.inputWrapper input,
+.inputGroup select {
+  width: 100%;
+  height: 42px;
+  padding: 0 14px;
+  background-color: #ffffff;
+  border: 1px solid #e4e4e7;
+  border-radius: var(--radius);
+  color: #09090b;
+  font-size: 0.875rem;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.inputWrapper input {
+  padding-left: 36px;
+}
+
+.inputWrapper input:focus,
+.inputGroup select:focus {
+  border-color: #09090b;
+  box-shadow: 0 0 0 1px #09090b;
+}
+
+.inputGroup select {
+  cursor: pointer;
+  appearance: auto;
+}
+
+.codeInput input {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
 }
 
-.input {
-  height: 38px;
-  padding: 0 12px;
-  background-color: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  color: #0f172a;
-  font-size: 0.9rem;
-  outline: none;
+.inputHint {
+  font-size: 0.75rem;
+  color: #a1a1aa;
+  margin-top: 4px;
 }
 
-.input:focus {
-  border-color: #2563eb;
+.joinContent {
+  max-width: 480px;
+  margin: 0 auto;
 }
 
-.difficultyGrid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.diffCard {
-  padding: 12px;
-  background-color: #ffffff;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
+.joinContent h3 {
+  margin: 0 0 1.5rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #09090b;
   text-align: center;
-  cursor: pointer;
-  font-size: 0.85rem;
+}
+
+.joinForm {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.joinDivider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 1.5rem 0;
+}
+
+.joinDivider::before,
+.joinDivider::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid #e4e4e7;
+}
+
+.joinDivider span {
+  padding: 0 12px;
+  color: #a1a1aa;
+  font-size: 0.75rem;
   font-weight: 600;
-  color: #0f172a;
 }
 
-.diffCardActive {
-  border-color: #2563eb;
-  color: #2563eb;
-  background-color: #eff6ff;
-}
-
-.btnPrimary {
+.secondaryButton {
+  width: 100%;
   height: 42px;
-  background-color: #2563eb;
-  color: #ffffff;
-  border: none;
-  border-radius: 6px;
-  font-size: 0.9rem;
+  background-color: #ffffff;
+  color: #09090b;
+  border: 1px solid #e4e4e7;
+  border-radius: var(--radius);
+  font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
-  margin-top: 8px;
+  transition: all 0.2s ease;
 }
 
-.btnPrimary:hover {
-  background-color: #1d4ed8;
+.secondaryButton:hover {
+  background-color: #f4f4f5;
+  border-color: #d4d4d8;
+}
+
+@media (max-width: 640px) {
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+  .form {
+    padding: 1.25rem;
+  }
 }

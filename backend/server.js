@@ -9,6 +9,8 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
+import { execFile } from "child_process";
+import vm from "vm";
 
 import { testDbConnection, query } from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
@@ -38,7 +40,7 @@ import {
   recordEvent,
   getReplay
 } from "./services/replayManager.js";
-import { getChallengeByDifficulty } from "./services/challengeService.js";
+import { getChallengeByDifficulty, CHALLENGES } from "./services/challengeService.js";
 import { initScores, awardPoints, finalizeMatchScores, getLeaderboard } from "./services/scoreManager.js";
 
 const app = express();
@@ -99,80 +101,250 @@ app.get("/api/rooms/:roomCode", (req, res) => {
   });
 });
 
-app.post("/api/run-code", (req, res) => {
-  const { roomId, userId, code, language, submit } = req.body;
+const PYTHON_CONTAINER_HARNESS = `
+import sys, json
 
-  const normCode = roomId?.trim().toUpperCase();
-  const room = getRoom(normCode);
-  const challenge = room?.challenge || getChallengeByDifficulty(room?.difficulty || "EASY");
+def deep_equal(a, b, tol=1e-5):
+    if a == b: return True
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)): return abs(a - b) <= tol
+    if isinstance(a, dict) and isinstance(b, dict):
+        if len(a) != len(b): return False
+        return all(k in b and deep_equal(a[k], b[k], tol) for k in a)
+    if isinstance(a, list) and isinstance(b, list):
+        if len(a) != len(b): return False
+        return all(deep_equal(x, y, tol) for x, y in zip(a, b))
+    return False
 
-  const testCases = challenge?.test_cases || [
-    { input: { nums: [2, 7, 11, 15], target: 9 }, expected: [0, 1] },
-    { input: { nums: [3, 2, 4], target: 6 }, expected: [1, 2] },
-    { input: { nums: [3, 3], target: 6 }, expected: [0, 1] }
-  ];
+try:
+    payload = json.loads(sys.stdin.read())
+    user_code = payload.get("code", "")
+    tests = payload.get("tests", [])
+except Exception as e:
+    print(json.dumps({"global_error": "Payload parse error: " + str(e)}))
+    sys.exit(0)
 
-  let allPassed = true;
-  let stdout = "Executing unit test suite...\n";
-  let stderr = "";
+scope = {}
+results = []
 
-  const results = testCases.map((tc, index) => {
-    let passed = false;
-    let actual = null;
+try:
+    exec(user_code, scope)
+    fn = None
+    candidate_names = [
+        "calculate_cart_total", "calculateCartTotal",
+        "calculate_order_total", "calculateOrderTotal",
+        "validate_auth_token", "validateAuthToken",
+        "validate_access_token", "validateAccessToken",
+        "process_ledger_transactions", "processLedgerTransactions",
+        "twoSum", "two_sum"
+    ]
+    for name in candidate_names:
+        if name in scope and callable(scope[name]):
+            fn = scope[name]
+            break
+    if not fn:
+        for k, v in scope.items():
+            if callable(v) and not k.startswith("__"):
+                fn = v
+                break
+    if not fn:
+        raise Exception("No callable target function found in submitted Python code.")
 
-    try {
-      if (language === "javascript" || !language) {
-        const runner = new Function(
-          "input",
-          `${code}; if (typeof twoSum !== 'undefined') return twoSum(input.nums, input.target); if (typeof calculate_cart_total !== 'undefined') return calculate_cart_total(input.items, input.discount_pct); return null;`
-        );
-        actual = runner(tc.input);
-        passed = JSON.stringify(actual) === JSON.stringify(tc.expected);
-      } else {
-        passed = true;
-        actual = tc.expected;
-      }
-    } catch (err) {
-      stderr += `Test ${index + 1} Exception: ${err.message}\n`;
-      passed = false;
+    for idx, tc in enumerate(tests):
+        inp = tc.get("input", {})
+        expected = tc.get("expected")
+        try:
+            if isinstance(inp, dict):
+                try:
+                    act = fn(**inp)
+                except TypeError:
+                    act = fn(inp)
+            elif isinstance(inp, list):
+                act = fn(*inp)
+            else:
+                act = fn(inp)
+            passed = deep_equal(act, expected)
+            results.append({
+                "testCase": idx + 1,
+                "name": tc.get("name", "Test Case " + str(idx + 1)),
+                "passed": passed,
+                "actual": act,
+                "expected": expected,
+                "input": inp,
+                "error": None
+            })
+        except Exception as e:
+            results.append({
+                "testCase": idx + 1,
+                "name": tc.get("name", "Test Case " + str(idx + 1)),
+                "passed": False,
+                "actual": None,
+                "expected": expected,
+                "input": inp,
+                "error": str(e)
+            })
+except Exception as e:
+    print(json.dumps({"global_error": str(e)}))
+    sys.exit(0)
+
+print(json.dumps({"results": results}))
+`;
+
+function parseAndFormatResults(rawStdout, rawStderr, testCases, stdout, stderr, resolve) {
+  try {
+    const parsed = JSON.parse(rawStdout.trim());
+    if (parsed.global_error) {
+      stderr += `Execution Exception: ${parsed.global_error}\n`;
+      return resolve({
+        allPassed: false,
+        stdout: stdout + "Execution halted on syntax/runtime error.\n",
+        stderr,
+        results: testCases.map((tc, idx) => ({
+          testCase: idx + 1,
+          name: tc.name || `Test Case ${idx + 1}`,
+          passed: false,
+          actual: null,
+          expected: tc.expected,
+          input: tc.input,
+          error: parsed.global_error
+        }))
+      });
     }
 
-    if (!passed) allPassed = false;
-    stdout += `Test ${index + 1}: ${passed ? "PASSED" : "FAILED"}\n`;
-
-    return { testCase: index + 1, passed, actual, expected: tc.expected };
-  });
-
-  if (allPassed) {
-    stdout += "\nALL UNIT TESTS PASSED!";
-  } else {
-    stdout += "\nSOME TESTS FAILED.";
-  }
-
-  recordEvent(normCode, {
-    author: userId || "Developer",
-    action: allPassed ? "TESTS_PASSED" : "TESTS_FAILED",
-    details: `${userId || "Developer"} ran test suite (${allPassed ? "PASSED 3/3" : "FAILED"})`,
-    code
-  });
-
-  if (normCode) {
-    io.to(normCode).emit("test:run", {
-      roomCode: normCode,
-      author: userId,
-      passed: allPassed,
-      code
+    const results = parsed.results || [];
+    const allPassed = results.length > 0 && results.every((r) => r.passed);
+    results.forEach((r) => {
+      stdout += `Test ${r.testCase} [${r.name}]: ${r.passed ? "PASSED" : "FAILED"}\n`;
+      if (r.error) stderr += `Test ${r.testCase} Exception: ${r.error}\n`;
+    });
+    stdout += allPassed ? "\nALL UNIT TESTS PASSED!" : "\nSOME TESTS FAILED.";
+    resolve({ allPassed, stdout, stderr, results });
+  } catch (parseErr) {
+    stderr += `Output Parse Error: ${parseErr.message}\n${rawStdout}`;
+    resolve({
+      allPassed: false,
+      stdout: stdout + "Failed to parse test outputs.\n",
+      stderr,
+      results: testCases.map((tc, idx) => ({
+        testCase: idx + 1,
+        name: tc.name || `Test Case ${idx + 1}`,
+        passed: false,
+        actual: null,
+        expected: tc.expected,
+        input: tc.input,
+        error: parseErr.message
+      }))
     });
   }
+}
 
-  return res.json({
-    success: true,
-    allPassed,
-    stdout,
-    stderr,
-    results,
-    status: allPassed ? "success" : "failed"
+function runCodeInContainer(code, testCases) {
+  return new Promise((resolve) => {
+    let stdout = "🐳 Executing in isolated container (Dockerfile.runner-python)...\n";
+    let stderr = "";
+
+    const dockerArgs = [
+      "run",
+      "--rm",
+      "-i",
+      "--network",
+      "none",
+      "--memory",
+      "128m",
+      "runner-python:latest",
+      "python3",
+      "-c",
+      PYTHON_CONTAINER_HARNESS
+    ];
+
+    const proc = execFile("docker", dockerArgs, { timeout: 8000, maxBuffer: 1024 * 1024 }, (dockerErr, dockerStdout, dockerStderr) => {
+      if (dockerErr) {
+        console.warn("Docker execution failed, falling back to local python3:", dockerStderr || dockerErr.message);
+        const localProc = execFile("python3", ["-c", PYTHON_CONTAINER_HARNESS], { timeout: 5000, maxBuffer: 1024 * 1024 }, (localErr, localStdout, localStderr) => {
+          if (localErr) {
+            stderr += `Execution Error: ${localStderr || localErr.message}\n`;
+            return resolve({
+              allPassed: false,
+              stdout: stdout + "Execution failed.\n",
+              stderr,
+              results: testCases.map((tc, idx) => ({
+                testCase: idx + 1,
+                name: tc.name || `Test Case ${idx + 1}`,
+                passed: false,
+                actual: null,
+                expected: tc.expected,
+                input: tc.input,
+                error: localStderr || localErr.message
+              }))
+            });
+          }
+          parseAndFormatResults(localStdout, localStderr, testCases, stdout, stderr, resolve);
+        });
+        localProc.stdin.write(JSON.stringify({ code, tests: testCases }));
+        localProc.stdin.end();
+        return;
+      }
+
+      parseAndFormatResults(dockerStdout, dockerStderr, testCases, stdout, stderr, resolve);
+    });
+
+    proc.stdin.write(JSON.stringify({ code, tests: testCases }));
+    proc.stdin.end();
   });
+}
+
+app.post("/api/run-code", async (req, res) => {
+  try {
+    const { roomId, userId, code, challengeId, difficulty, submit } = req.body;
+
+    const normCode = roomId ? roomId.toString().trim().toUpperCase() : null;
+    const room = normCode ? getRoom(normCode) : null;
+    let challenge = room?.challenge;
+    if (!challenge && challengeId) {
+      challenge = Object.values(CHALLENGES).find((c) => c.id === Number(challengeId));
+    }
+    if (!challenge) {
+      challenge = getChallengeByDifficulty(difficulty || room?.difficulty || "MEDIUM");
+    }
+    const testCases = challenge?.test_cases || [];
+
+    const { allPassed, stdout, stderr, results } = await runCodeInContainer(code, testCases);
+
+    if (normCode) {
+      recordEvent(normCode, {
+        author: userId || "Developer",
+        action: allPassed ? "TESTS_PASSED" : "TESTS_FAILED",
+        details: `${userId || "Developer"} ran test suite (${allPassed ? "PASSED ALL" : "FAILED"})`,
+        code
+      });
+
+      io.to(normCode).emit("test:run", {
+        roomCode: normCode,
+        author: userId,
+        passed: allPassed,
+        code,
+        results
+      });
+    }
+
+    return res.json({
+      success: true,
+      allPassed,
+      stdout,
+      stderr,
+      results,
+      status: allPassed ? "success" : "failed"
+    });
+  } catch (err) {
+    console.error("Run code exception:", err);
+    return res.status(500).json({
+      success: false,
+      allPassed: false,
+      stdout: "",
+      stderr: err.message || "Failed to execute code in container.",
+      results: [],
+      status: "error"
+    });
+  }
 });
 
 const roomTimers = new Map();
@@ -194,11 +366,29 @@ function startDebugPhase(io, roomCode) {
 
   console.log(`⏱️ [Phase Changed: DEBUG] Room: ${norm} (${room.timeLimit}s)`);
 
+  const codeToReveal = room.currentCode || room.initialCode || "";
+
+  recordEvent(norm, {
+    author: "System",
+    authorRole: "SYSTEM",
+    action: "PHASE_CHANGE",
+    details: "Sabotage phase completed! Infiltrated codebase revealed to all developers.",
+    code: codeToReveal
+  });
+
   io.to(norm).emit("room:phase_changed", {
     phase: "DEBUG",
     timeLimit: room.timeLimit,
     phaseExpiresAt: room.phaseExpiresAt,
-    message: "Sabotage phase completed! All operatives are now authorized to debug the codebase."
+    code: codeToReveal,
+    message: "Sabotage phase completed! Infiltrated codebase has been revealed. All operatives are now authorized to debug."
+  });
+
+  // Broadcast the revealed code to the entire room so developers see the mafia's edits now
+  io.to(norm).emit("code:updated", {
+    code: codeToReveal,
+    author: "System",
+    activeLines: []
   });
 
   const timer = setTimeout(() => {
@@ -350,8 +540,11 @@ io.on("connection", (socket) => {
       const { room } = result;
 
       const challengeData = getChallengeByDifficulty(room.difficulty || "MEDIUM");
+      room.challenge = challengeData;
+      room.initialCode = challengeData.buggy_code;
+      room.currentCode = challengeData.buggy_code;
 
-      initTimeline(room.roomCode, challengeData.buggy_code, room.players);
+      initTimeline(room.roomCode, room.initialCode, room.players);
       initScores(room.roomCode, room.players);
 
       console.log(`[Match Started] Room: ${room.roomCode} (${room.difficulty}) - Initial SABOTAGE phase (30s)`);
@@ -377,7 +570,10 @@ io.on("connection", (socket) => {
                 role: other.socketId === p.socketId ? other.role : "???"
               }))
             },
-            challenge: challengeData,
+            challenge: {
+              ...challengeData,
+              buggy_code: p.role === "MAFIA" ? room.currentCode : room.initialCode
+            },
             leaderboard: getLeaderboard(room.roomCode)
           });
         }
@@ -385,7 +581,10 @@ io.on("connection", (socket) => {
 
       io.to(room.roomCode).emit("room:game_started", {
         roomCode: room.roomCode,
-        challenge: challengeData,
+        challenge: {
+          ...challengeData,
+          buggy_code: room.initialCode
+        },
         phase: "SABOTAGE",
         sabotageDuration: room.sabotageDuration,
         phaseExpiresAt: room.phaseExpiresAt,
@@ -412,11 +611,43 @@ io.on("connection", (socket) => {
   socket.on("code:edit", ({ roomCode, author, authorRole, code, details, activeLines }) => {
     const norm = roomCode?.trim().toUpperCase();
     const room = getRoom(norm);
+    if (!room) return;
 
-    if (room && room.phase === "SABOTAGE" && authorRole !== "MAFIA") {
+    if (room.phase === "SABOTAGE") {
+      const player = room.players.find(
+        (p) => p.socketId === socket.id || p.username?.toLowerCase() === author?.toLowerCase()
+      );
+      const isMafia = player ? player.role === "MAFIA" : authorRole === "MAFIA";
+
+      // Drop non-mafia edits during sabotage
+      if (!isMafia) {
+        return;
+      }
+
+      // Store secret sabotage code in room
+      room.currentCode = code;
+
+      recordEvent(norm, {
+        author: "System (Sabotage)",
+        authorRole: "MAFIA",
+        action: "SABOTAGE_DRAFT",
+        details: "Code altered during infiltration window",
+        code,
+        activeLines
+      });
+
+      // DO NOT broadcast to developers!
+      // Only broadcast to other mafia members if any
+      room.players.forEach((p) => {
+        if (p.role === "MAFIA" && p.socketId && p.socketId !== socket.id) {
+          io.to(p.socketId).emit("code:updated", { code, author, activeLines });
+        }
+      });
       return;
     }
 
+    // Normal DEBUG phase
+    room.currentCode = code;
     recordEvent(norm, {
       author,
       authorRole,

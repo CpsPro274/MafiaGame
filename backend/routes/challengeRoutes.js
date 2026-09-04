@@ -26,8 +26,12 @@ router.get("/:id", async (req, res) => {
     if (isNaN(Number(param))) {
       const room = getRoom(param);
       const difficulty = room ? room.difficulty : "MEDIUM";
-      const challenge = getChallengeByDifficulty(difficulty);
-      return res.json(challenge);
+      const challenge = room?.challenge || getChallengeByDifficulty(difficulty);
+      const codeToServe = (room?.phase === "DEBUG" && room?.currentCode) ? room.currentCode : challenge.buggy_code;
+      return res.json({
+        ...challenge,
+        buggy_code: codeToServe
+      });
     }
 
     const result = await query(

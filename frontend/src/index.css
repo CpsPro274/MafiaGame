@@ -1,28 +1,43 @@
 :root {
   --background: #ffffff;
-  --foreground: #0f172a;
+  --foreground: #09090b;
 
-  --card: #f8fafc;
-  --card-foreground: #0f172a;
+  --card: #ffffff;
+  --card-muted: #f8fafc;
+  --card-foreground: #09090b;
 
   --popover: #ffffff;
-  --popover-foreground: #0f172a;
+  --popover-foreground: #09090b;
 
-  --primary: #2563eb;
+  --primary: #09090b;
   --primary-foreground: #ffffff;
 
-  --secondary: #f1f5f9;
-  --secondary-foreground: #0f172a;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #09090b;
 
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
 
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #2563eb;
+  --border: #e4e4e7;
+  --border-subtle: #f1f5f9;
+  --input: #e4e4e7;
+  --ring: #09090b;
+
+  --success: #16a34a;
+  --success-bg: #f0fdf4;
+  --success-border: #bbf7d0;
+
+  --danger: #dc2626;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+
+  --warning: #f59e0b;
+  --warning-bg: #fefce8;
+  --warning-border: #fde047;
 
   --radius: 8px;
-  --font-sans: Inter, system-ui, sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace;
 }
 
 *,
@@ -41,7 +56,28 @@ body,
   background-color: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--foreground);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+p {
+  color: #27272a;
+  line-height: 1.6;
+}
+
+button {
+  font-family: var(--font-sans);
+}
+
+input, select, textarea {
+  font-family: var(--font-sans);
 }
 
 ::-webkit-scrollbar {
@@ -50,10 +86,14 @@ body,
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--background);
+  background: #ffffff;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: #d4d4d8;
   border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1aa;
 }

@@ -359,7 +359,8 @@ export function completeGame(roomCode, winnerTeam, endReason) {
 }
 
 export function getRoom(roomCode) {
-  return rooms.get(roomCode.trim().toUpperCase());
+  if (!roomCode || typeof roomCode !== "string") return null;
+  return rooms.get(roomCode.trim().toUpperCase()) || null;
 }
 
 export function getRoomBySocketId(socketId) {
