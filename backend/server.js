@@ -103,6 +103,7 @@ app.get("/api/rooms/:roomCode", (req, res) => {
 
 const PYTHON_CONTAINER_HARNESS = `
 import sys, json
+from typing import List, Dict, Tuple, Set, Optional, Any
 
 def deep_equal(a, b, tol=1e-5):
     if a == b: return True
@@ -112,6 +113,10 @@ def deep_equal(a, b, tol=1e-5):
         return all(k in b and deep_equal(a[k], b[k], tol) for k in a)
     if isinstance(a, list) and isinstance(b, list):
         if len(a) != len(b): return False
+        # Order-insensitive check for two-element index lists (e.g., LeetCode Two Sum)
+        if len(a) == 2 and all(isinstance(x, int) for x in a) and all(isinstance(y, int) for y in b):
+            if sorted(a) == sorted(b):
+                return True
         return all(deep_equal(x, y, tol) for x, y in zip(a, b))
     return False
 
@@ -123,27 +128,51 @@ except Exception as e:
     print(json.dumps({"global_error": "Payload parse error: " + str(e)}))
     sys.exit(0)
 
-scope = {}
+scope = {
+    "List": List,
+    "Dict": Dict,
+    "Tuple": Tuple,
+    "Set": Set,
+    "Optional": Optional,
+    "Any": Any
+}
 results = []
 
 try:
     exec(user_code, scope)
     fn = None
     candidate_names = [
+        "twoSum", "two_sum",
+        "lengthOfLongestSubstring", "length_of_longest_substring",
+        "trap", "trapRainWater", "trap_rain_water",
         "calculate_cart_total", "calculateCartTotal",
-        "calculate_order_total", "calculateOrderTotal",
         "validate_auth_token", "validateAuthToken",
-        "validate_access_token", "validateAccessToken",
-        "process_ledger_transactions", "processLedgerTransactions",
-        "twoSum", "two_sum"
+        "process_ledger_transactions", "processLedgerTransactions"
     ]
-    for name in candidate_names:
-        if name in scope and callable(scope[name]):
-            fn = scope[name]
-            break
+    # Check for LeetCode class Solution
+    if "Solution" in scope and isinstance(scope["Solution"], type):
+        try:
+            sol_instance = scope["Solution"]()
+            for name in candidate_names:
+                if hasattr(sol_instance, name) and callable(getattr(sol_instance, name)):
+                    fn = getattr(sol_instance, name)
+                    break
+            if not fn:
+                for attr in dir(sol_instance):
+                    if not attr.startswith("__") and callable(getattr(sol_instance, attr)):
+                        fn = getattr(sol_instance, attr)
+                        break
+        except Exception:
+            pass
+
+    if not fn:
+        for name in candidate_names:
+            if name in scope and callable(scope[name]):
+                fn = scope[name]
+                break
     if not fn:
         for k, v in scope.items():
-            if callable(v) and not k.startswith("__"):
+            if callable(v) and not k.startswith("__") and not isinstance(v, type):
                 fn = v
                 break
     if not fn:
@@ -157,7 +186,10 @@ try:
                 try:
                     act = fn(**inp)
                 except TypeError:
-                    act = fn(inp)
+                    try:
+                        act = fn(*inp.values())
+                    except TypeError:
+                        act = fn(inp)
             elif isinstance(inp, list):
                 act = fn(*inp)
             else:

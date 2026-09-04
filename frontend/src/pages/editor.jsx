@@ -14,49 +14,13 @@ import { socket as sharedSocket, getBackendUrl } from "../socket";
 const API_URL = getBackendUrl();
 
 const STARTER_TEMPLATES = {
-  javascript: `/**
- * Problem: Two Sum
- * @param {number[]} nums
- * @param {number} target
- * @return {number[]}
- */
-function twoSum(nums, target) {
-    const map = new Map();
-
-    for (let i = 0; i < nums.length; i++) {
-        const diff = target - nums[i];
-
-        if (map.has(diff)) {
-            return [map.get(diff), i];
-        }
-
-        map.set(nums[i], i);
-    }
-
+  javascript: `function twoSum(nums, target) {
     return [];
 }
-
-// Test
-console.log(twoSum([2, 7, 11, 15], 9));
 `,
 
   python: `def twoSum(nums, target):
-    lookup = {}
-
-    for i, num in enumerate(nums):
-        diff = target - num
-
-        if diff in lookup:
-            return [lookup[diff], i]
-
-        lookup[num] = i
-
     return []
-
-
-# Test
-sol = Solution()
-print(sol.twoSum([2, 7, 11, 15], 9))
 `,
 };
 

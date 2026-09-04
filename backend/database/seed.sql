@@ -1,75 +1,138 @@
-
 INSERT INTO users (username, email, password)
 VALUES 
     ('alex_dev', 'alex@gmail.com', 'password123'),
     ('sam_mafia', 'sam@gmail.com', 'password123')
 ON CONFLICT (username) DO NOTHING;
 
-INSERT INTO challenges (title, description, language, buggy_code, solution_code, test_cases)
-VALUES (
-    'E-Commerce Checkout & Tiered Pricing Engine',
-    'Calculate customer cart totals with item subtotals, percentage discounts, promo coupon validation (SAVE20, HALFPRICE, FREESHIP), category tax exemptions, and shipping thresholds.',
+INSERT INTO challenges (id, title, description, language, buggy_code, solution_code, test_cases)
+VALUES 
+(
+    1,
+    'LeetCode 1: Two Sum',
+    'Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target. You may assume that each input would have exactly one solution, and you may not use the same element twice. You can return the answer in any order.',
     'python',
-$BUGGY$
-def calculate_cart_total(items, discount_pct=0, coupon_code=""):
-    if not items:
-        return {"subtotal": 0, "discount": 0, "tax": 0, "shipping": 0, "total": 0}
-    subtotal = 0
-    for i in range(len(items) + 1):
-        subtotal += items[i]["price"] * items[i]["qty"]
-    discount = (subtotal * discount_pct) / 100.0
-    c = (coupon_code or "").upper()
-    if c == "SAVE20" and subtotal >= 80:
-        discount += 20
-    elif c == "HALFPRICE" and subtotal >= 150:
-        discount += min(subtotal * 0.5, 60)
-    discount = min(discount, subtotal)
-    taxable = subtotal
-    tax = round(taxable * 0.08, 2)
-    post_discount = subtotal - discount
-    shipping = 0 if (post_discount >= 100 or c == "FREESHIP") else 10
-    total = round(post_discount + tax + shipping, 2)
-    return {
-        "subtotal": round(subtotal, 2),
-        "discount": round(discount, 2),
-        "tax": round(tax, 2),
-        "shipping": round(shipping, 2),
-        "total": round(total, 2)
-    }
-$BUGGY$,
-$SOL$
-def calculate_cart_total(items, discount_pct=0, coupon_code=""):
-    if not items:
-        return {"subtotal": 0, "discount": 0, "tax": 0, "shipping": 0, "total": 0}
-    subtotal = sum(it["price"] * it["qty"] for it in items if it.get("qty", 0) > 0)
-    if subtotal == 0:
-        return {"subtotal": 0, "discount": 0, "tax": 0, "shipping": 0, "total": 0}
-    discount = (subtotal * discount_pct) / 100.0
-    c = (coupon_code or "").upper()
-    if c == "SAVE20" and subtotal >= 80:
-        discount += 20
-    elif c == "HALFPRICE" and subtotal >= 150:
-        discount += min(subtotal * 0.5, 60)
-    discount = min(discount, subtotal)
-    taxable = sum(it["price"] * it["qty"] for it in items if it.get("qty", 0) > 0 and not it.get("tax_exempt", False) and it.get("category") not in ("groceries", "books"))
-    tax = round(taxable * 0.08, 2)
-    post_discount = subtotal - discount
-    shipping = 0 if (post_discount >= 100 or c == "FREESHIP") else 10
-    total = round(post_discount + tax + shipping, 2)
-    return {
-        "subtotal": round(subtotal, 2),
-        "discount": round(discount, 2),
-        "tax": round(tax, 2),
-        "shipping": round(shipping, 2),
-        "total": round(total, 2)
-    }
-$SOL$,
+$BUGGY1$
+def twoSum(nums: list[int], target: int) -> list[int]:
+    seen = {}
+    for i, num in enumerate(nums):
+        diff = target - num
+        seen[num] = i
+        if diff in seen and seen[diff] != i:
+            return [seen[diff], i]
+    return []
+$BUGGY1$,
+$SOL1$
+def twoSum(nums: list[int], target: int) -> list[int]:
+    seen = {}
+    for i, num in enumerate(nums):
+        diff = target - num
+        if diff in seen:
+            return [seen[diff], i]
+        seen[num] = i
+    return []
+$SOL1$,
 '[
-    {"name": "Standard Order with Percentage Discount", "input": {"items": [{"name": "Headphones", "price": 60, "qty": 1, "category": "electronics", "tax_exempt": false}, {"name": "Cables", "price": 20, "qty": 2, "category": "electronics", "tax_exempt": false}], "discount_pct": 10, "coupon_code": ""}, "expected": {"subtotal": 100, "discount": 10, "tax": 8, "shipping": 10, "total": 108}, "is_public": true},
-    {"name": "Empty Cart & Zero Quantities", "input": {"items": [{"name": "Ghost", "price": 50, "qty": 0, "category": "misc", "tax_exempt": false}], "discount_pct": 20, "coupon_code": "SAVE20"}, "expected": {"subtotal": 0, "discount": 0, "tax": 0, "shipping": 0, "total": 0}, "is_public": true},
-    {"name": "Free Shipping Boundary at $100", "input": {"items": [{"name": "Monitor", "price": 125, "qty": 1, "category": "electronics", "tax_exempt": false}], "discount_pct": 20, "coupon_code": ""}, "expected": {"subtotal": 125, "discount": 25, "tax": 10, "shipping": 0, "total": 110}, "is_public": true},
-    {"name": "Category Tax Exemption", "input": {"items": [{"name": "Mouse", "price": 50, "qty": 1, "category": "electronics", "tax_exempt": false}, {"name": "Apples", "price": 20, "qty": 1, "category": "groceries", "tax_exempt": false}, {"name": "Textbook", "price": 30, "qty": 1, "category": "books", "tax_exempt": true}], "discount_pct": 0, "coupon_code": ""}, "expected": {"subtotal": 100, "discount": 0, "tax": 4, "shipping": 0, "total": 104}, "is_public": false},
-    {"name": "Coupon Min Order & Max Cap", "input": {"items": [{"name": "Smartphone", "price": 200, "qty": 1, "category": "electronics", "tax_exempt": false}], "discount_pct": 0, "coupon_code": "HALFPRICE"}, "expected": {"subtotal": 200, "discount": 60, "tax": 16, "shipping": 0, "total": 156}, "is_public": false},
-    {"name": "FREESHIP Promo Mixed Basket", "input": {"items": [{"name": "Backpack", "price": 40, "qty": 1, "category": "apparel", "tax_exempt": false}, {"name": "Snacks", "price": 10, "qty": 1, "category": "groceries", "tax_exempt": false}], "discount_pct": 10, "coupon_code": "FREESHIP"}, "expected": {"subtotal": 50, "discount": 5, "tax": 3.2, "shipping": 0, "total": 48.2}, "is_public": false}
+    {"name": "Example 1: Basic positive target", "input": {"nums": [2, 7, 11, 15], "target": 9}, "expected": [0, 1], "is_public": true, "hidden": false},
+    {"name": "Example 2: Target from non-adjacent indices", "input": {"nums": [3, 2, 4], "target": 6}, "expected": [1, 2], "is_public": true, "hidden": false},
+    {"name": "Example 3: Duplicate identical elements", "input": {"nums": [3, 3], "target": 6}, "expected": [0, 1], "is_public": true, "hidden": false},
+    {"name": "Edge Case 4: Negative numbers with negative target", "input": {"nums": [-1, -2, -3, -4, -5], "target": -8}, "expected": [2, 4], "is_public": false, "hidden": true},
+    {"name": "Edge Case 5: Target of zero with zeroes", "input": {"nums": [0, 4, 3, 0], "target": 0}, "expected": [0, 3], "is_public": false, "hidden": true},
+    {"name": "Edge Case 6: Negative and positive combination", "input": {"nums": [-10, 7, 19, 15, 25], "target": 15}, "expected": [0, 4], "is_public": false, "hidden": true}
 ]'::jsonb
-);
+),
+(
+    2,
+    'LeetCode 3: Longest Substring Without Repeating Characters',
+    'Given a string s, find the length of the longest substring without repeating characters.',
+    'python',
+$BUGGY2$
+def lengthOfLongestSubstring(s: str) -> int:
+    char_map = {}
+    left = 0
+    max_len = 0
+    for right in range(len(s)):
+        char = s[right]
+        if char in char_map:
+            left = char_map[char] + 1
+        char_map[char] = right
+        max_len = max(max_len, right - left + 1)
+    return max_len
+$BUGGY2$,
+$SOL2$
+def lengthOfLongestSubstring(s: str) -> int:
+    char_map = {}
+    left = 0
+    max_len = 0
+    for right, char in enumerate(s):
+        if char in char_map and char_map[char] >= left:
+            left = char_map[char] + 1
+        char_map[char] = right
+        max_len = max(max_len, right - left + 1)
+    return max_len
+$SOL2$,
+'[
+    {"name": "Example 1: Standard string repetitions", "input": {"s": "abcabcbb"}, "expected": 3, "is_public": true, "hidden": false},
+    {"name": "Example 2: All identical repeating characters", "input": {"s": "bbbbb"}, "expected": 1, "is_public": true, "hidden": false},
+    {"name": "Example 3: Substring with repetition inside", "input": {"s": "pwwkew"}, "expected": 3, "is_public": true, "hidden": false},
+    {"name": "Edge Case 4: Empty string", "input": {"s": ""}, "expected": 0, "is_public": false, "hidden": true},
+    {"name": "Edge Case 5: Single whitespace character", "input": {"s": " "}, "expected": 1, "is_public": false, "hidden": true},
+    {"name": "Edge Case 6: Window reset trap", "input": {"s": "abba"}, "expected": 2, "is_public": false, "hidden": true}
+]'::jsonb
+),
+(
+    3,
+    'LeetCode 42: Trapping Rain Water',
+    'Given n non-negative integers representing an elevation map where the width of each bar is 1, compute how much water it can trap after raining.',
+    'python',
+$BUGGY3$
+def trap(height: list[int]) -> int:
+    if not height or len(height) < 3:
+        return 0
+    left, right = 0, len(height) - 1
+    left_max, right_max = height[left], height[right]
+    water = 0
+    while left < right:
+        if left_max <= right_max:
+            left += 1
+            water += max(0, left_max - height[left])
+            left_max = max(left_max, height[left])
+        else:
+            right -= 1
+            water += right_max - height[right]
+            right_max = max(right_max, height[right])
+    return water
+$BUGGY3$,
+$SOL3$
+def trap(height: list[int]) -> int:
+    if not height:
+        return 0
+    left, right = 0, len(height) - 1
+    left_max, right_max = height[left], height[right]
+    water = 0
+    while left < right:
+        if left_max < right_max:
+            left += 1
+            left_max = max(left_max, height[left])
+            water += left_max - height[left]
+        else:
+            right -= 1
+            right_max = max(right_max, height[right])
+            water += right_max - height[right]
+    return water
+$SOL3$,
+'[
+    {"name": "Example 1: Standard elevation map", "input": {"height": [0, 1, 0, 2, 1, 0, 1, 3, 2, 1, 2, 1]}, "expected": 6, "is_public": true, "hidden": false},
+    {"name": "Example 2: Plateau with central basin", "input": {"height": [4, 2, 0, 3, 2, 5]}, "expected": 9, "is_public": true, "hidden": false},
+    {"name": "Edge Case 3: Empty elevation array", "input": {"height": []}, "expected": 0, "is_public": true, "hidden": false},
+    {"name": "Edge Case 4: Insufficient bars to trap water", "input": {"height": [3, 2]}, "expected": 0, "is_public": false, "hidden": true},
+    {"name": "Edge Case 5: Strictly decreasing staircase", "input": {"height": [5, 4, 3, 2, 1]}, "expected": 0, "is_public": false, "hidden": true},
+    {"name": "Edge Case 6: Deep canyon with symmetric peaks", "input": {"height": [5, 2, 1, 2, 1, 5]}, "expected": 14, "is_public": false, "hidden": true}
+]'::jsonb
+)
+ON CONFLICT (id) DO UPDATE SET 
+    title = EXCLUDED.title,
+    description = EXCLUDED.description,
+    language = EXCLUDED.language,
+    buggy_code = EXCLUDED.buggy_code,
+    solution_code = EXCLUDED.solution_code,
+    test_cases = EXCLUDED.test_cases;
