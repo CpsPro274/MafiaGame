@@ -101,7 +101,7 @@ export default function Home() {
           </h1>
 
           <p className={styles.description}>
-            Welcome to <strong>Code Mafia</strong> — a multiplayer coding
+            Welcome to <strong>Code Mafia</strong> a multiplayer coding
             challenge where your team must debug a broken project, pass the
             tests, and uncover the hidden Mafia sabotaging your code.
           </p>
