@@ -89,15 +89,7 @@ export default function Home() {
       />
 
       <main className={styles.main}>
-        {/* ==========================================================================
-            HERO SECTION (CLEAN + SUBTLE AMONG US TOUCHES)
-            ========================================================================== */}
         <section className={styles.hero}>
-          {/* Minimalist Pill Badge with Red Dot */}
-          <div className={styles.badge}>
-            <span className={styles.badgeDot} />
-            <span>Social Deduction • There is 1 Mafia Among Us</span>
-          </div>
 
           <h1 className={styles.title}>
             Code together.
@@ -106,10 +98,9 @@ export default function Home() {
           </h1>
 
           <p className={styles.description}>
-            Welcome to <strong>Code Mafia</strong> — a multiplayer coding challenge where your team collaborates in a shared IDE to debug a broken project, pass unit tests, and uncover the secret Imposter sabotaging your code.
+            Welcome to <strong>Code Mafia</strong> a multiplayer coding challenge where your team collaborates in a shared IDE to debug a broken project, pass unit tests, and uncover the secret Imposter sabotaging your code.
           </p>
 
-          {/* Cute Crewmates Showcase */}
           <div className={styles.heroMascots}>
             <div className="flex flex-col items-center">
               <CrewmateMascot color="cyan" role="developer" size={68} glow={false} />
@@ -128,7 +119,6 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Action Buttons */}
           <div className={styles.btngroup}>
             <ButtonWithIcon text="Create Game" onClick={handleCreateGame} />
             <ButtonWithIcon
@@ -137,22 +127,8 @@ export default function Home() {
               icon={<Users size={16} />}
             />
           </div>
-
-          {/* Quick Specs Bar */}
-          <div className={styles.specsBar}>
-            <span>👥 2–10 Players</span>
-            <span className={styles.specDot} />
-            <span>⚡ Real-Time Monaco IDE</span>
-            <span className={styles.specDot} />
-            <span>🐳 Sandboxed Docker</span>
-            <span className={styles.specDot} />
-            <span>🚨 Emergency Tribunal</span>
-          </div>
         </section>
 
-        {/* ==========================================================================
-            GAME FEATURES SECTION
-            ========================================================================== */}
         <section className={styles.gameSection}>
           <div className={styles.sectionHeader}>
             <span className={styles.sectionLabel}>THE GAME</span>
@@ -162,7 +138,7 @@ export default function Home() {
               <span className={styles.gradient}>Someone is breaking it.</span>
             </h2>
             <p className={styles.sectionDescription}>
-              Work together as developers to stabilize an intentionally flawed software project. But beware — one or more players are secretly Mafia whose mission is to sabotage tests without getting caught.
+              Work together as developers to stabilize an intentionally flawed software project. But beware one or more players are secretly Mafia whose mission is to sabotage tests without getting caught.
             </p>
           </div>
 
@@ -199,9 +175,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ==========================================================================
-            ROLES SECTION (WITH SUBTLE AMONG US CREWMATES)
-            ========================================================================== */}
         <section className={styles.rolesSection}>
           <div className={styles.roleCard}>
             <CrewmateMascot color="cyan" role="developer" size={80} glow={false} />
@@ -226,17 +199,9 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ==========================================================================
-            HOW IT WORKS SECTION (4 PHASES)
-            ========================================================================== */}
         <section id="how-it-works" className={styles.howSection}>
           <div className={styles.sectionHeader}>
             <span className={styles.sectionLabel}>HOW IT WORKS</span>
-            <h2 className={styles.sectionTitle}>
-              Four phases.
-              <br />
-              <span className={styles.gradient}>One winner.</span>
-            </h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 w-full">
@@ -286,9 +251,6 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ==========================================================================
-            FINAL CTA SECTION
-            ========================================================================== */}
         <section id="bottom" className={styles.cta}>
           <h2 className={styles.ctaTitle}>
             Your code is broken.
@@ -306,22 +268,6 @@ export default function Home() {
             icon={<Gamepad2 size={16} />}
           />
         </section>
-
-        {/* ==========================================================================
-            FOOTER
-            ========================================================================== */}
-        <footer className={styles.footer}>
-          <div>
-            <span className={styles.footerLogo}>CODE MAFIA</span>
-            <span className={styles.footerText}>
-              Multiplayer Collaborative Debugging
-            </span>
-          </div>
-
-          <span className={styles.footerCopyright}>
-            © 2026 Code Mafia. All rights reserved.
-          </span>
-        </footer>
       </main>
     </div>
   );
