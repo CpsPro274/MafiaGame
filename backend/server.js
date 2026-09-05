@@ -104,7 +104,7 @@ app.get("/api/rooms/:roomCode", (req, res) => {
 
 async function runCodeInContainer(code, testCases) {
   try {
-    const runnerUrl = process.env.RUNNER_URL || "http://localhost:6000";
+    const runnerUrl = process.env.RUNNER_URL || (process.env.WORKER_HOSTPORT ? `http://${process.env.WORKER_HOSTPORT}` : "http://worker:6000");
     const response = await fetch(`${runnerUrl}/api/run-code`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
