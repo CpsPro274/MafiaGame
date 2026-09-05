@@ -5,9 +5,10 @@ databases:
     plan: free
 
 services:
-  - type: pserv
+  - type: web
     name: worker
     env: docker
+    plan: free
     dockerContext: ./worker
     dockerfilePath: ./worker/Dockerfile
     autoDeploy: true
@@ -15,9 +16,10 @@ services:
       - key: PORT
         value: "6000"
 
-  - type: pserv
+  - type: web
     name: backend
     env: docker
+    plan: free
     dockerContext: ./backend
     dockerfilePath: ./backend/Dockerfile
     autoDeploy: true
@@ -34,6 +36,7 @@ services:
   - type: web
     name: frontend
     env: docker
+    plan: free
     dockerContext: ./frontend
     dockerfilePath: ./frontend/Dockerfile
     autoDeploy: true
