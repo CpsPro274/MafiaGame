@@ -1,0 +1,35 @@
+databases:
+  - name: mafiagame-db
+    databaseName: mafiagame
+    user: mafia
+    plan: free
+
+services:
+  - type: web
+    name: mafiagame-worker
+    env: docker
+    dockerContext: ./worker
+    dockerfilePath: ./worker/Dockerfile
+    autoDeploy: true
+
+  - type: web
+    name: mafiagame-backend
+    env: docker
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mafiagame-db
+          property: connectionString
+      - key: RUNNER_URL
+        # In Render, web services are accessible via their name natively
+        value: http://mafiagame-worker:6000
+
+  - type: web
+    name: mafiagame-frontend
+    env: docker
+    dockerContext: ./frontend
+    dockerfilePath: ./frontend/Dockerfile
+    autoDeploy: true
